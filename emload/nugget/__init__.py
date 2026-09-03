@@ -11,8 +11,10 @@ progress is reported through ``on_progress(phase, percent, step)`` callbacks so
 the GUI worker threads can surface it.
 
 Apply routing: iOS 17.0 - 18.1 (plus unpatched 18.2 betas) uses sparserestore;
-iOS 18.2+ uses BookRestore (AFC or Restore method); fully patched devices
-raise :class:`NuggetError`.
+iOS 18.2+ uses BookRestore (AFC or Restore method); iOS 27 is hard-blocked
+(Apple's setup flow does not honor skip-setup, leaving devices on the white
+"Swipe up to upgrade" screen); fully patched devices raise
+:class:`NuggetError`.
 """
 
 from __future__ import annotations

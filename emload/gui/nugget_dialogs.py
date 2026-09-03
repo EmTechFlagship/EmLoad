@@ -130,7 +130,13 @@ class TweakDialog(QDialog):
         self.skip_setup_check.setToolTip(
             "Restores the skip-setup configuration so iOS skips the "
             "\"Swipe up to upgrade\" / Setup Assistant flow after rebooting, "
-            "keeping your on-device settings and data."
+            "keeping your on-device settings and data.\n\n"
+            "Best-effort: on BookRestore devices this forces the Restore "
+            "method (full system restore + reboot) and Apple does not always "
+            "honor the skip-setup files. If you see \"Swipe up to upgrade\" "
+            "after applying, do NOT swipe - force-off the phone instead.\n\n"
+            "Note: applies are hard-blocked on iOS 27 (it does not honor "
+            "skip-setup and can leave the device stuck on that white screen)."
         )
         root.addWidget(self.skip_setup_check)
 

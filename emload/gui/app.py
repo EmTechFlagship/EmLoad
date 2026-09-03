@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import QSize, Qt
-from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent, QPixmap
+from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -86,10 +86,24 @@ def _days_left_text(days: float | None, expired: bool = False) -> str:
     return f"{days:.1f}d left"
 
 
+def _app_icon() -> QIcon:
+    """The EmLoad window/taskbar icon (bundled ``gui/assets/E.png``).
+
+    Returns an empty icon (QIcon()) if the asset is missing, so the app still
+    runs with the default icon rather than crashing.
+    """
+    icon_file = paths.resource_dir() / "gui" / "assets" / "E.png"
+    icon = QIcon()
+    if icon_file.is_file():
+        icon.addFile(str(icon_file))
+    return icon
+
+
 class MainWindow(QMainWindow):
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(f"EmLoad {__version__} - iOS Sideloading")
+        self.setWindowIcon(_app_icon())
         self.resize(1020, 720)
 
         self.devices: list[dict[str, Any]] = []
@@ -981,6 +995,7 @@ def run_gui() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("EmLoad")
     app.setOrganizationName("EmLoad")
+    app.setWindowIcon(_app_icon())
     window = MainWindow()
     window.show()
     return app.exec()

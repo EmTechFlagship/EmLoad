@@ -38,10 +38,12 @@ through `pymobiledevice3`.
 - **Miscellaneous tweaks (Nugget-based)**: SpringBoard options, daemon toggles
   and Liquid Glass settings applied with the sparserestore backup-restore
   exploit on iOS 17.0 - 18.1, or **BookRestore** (AFC / Restore methods) on
-  iOS 18.2+ (including the iOS 27 Beta 4 exception, build ``24A5390f``) —
-  no jailbreak, plus a WebKit-overload respring. Applies skip-setup
+  iOS 18.2+. **iOS 27 applies are hard-blocked**: Apple's changed setup flow
+  does not honor skip-setup, so an apply can leave the device on the white
+  "Swipe up to upgrade" screen (and swiping it can reset the device). No
+  jailbreak, plus a WebKit-overload respring. Applies skip-setup
   configuration by default so the post-reboot "Swipe up to upgrade" flow
-  is skipped and on-device settings aren't reset.
+  is skipped on OS versions that honor it and on-device settings aren't reset.
 - **Diagnostics** (`emload doctor`) that tell you exactly what's missing
 
 ## Requirements

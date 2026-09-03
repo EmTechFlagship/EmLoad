@@ -135,7 +135,7 @@ async def _open_respring_page_via_automation(lockdown: LockdownClient, url: str)
     inspector-session path fails.
     """
     inspector = WebinspectorService(lockdown=lockdown)
-    await inspector.connect(10)
+    await inspector.connect()
     try:
         safari = await asyncio.wait_for(inspector.open_app(SAFARI, 10), timeout=15)
         session = await asyncio.wait_for(inspector.automation_session(safari), timeout=15)
@@ -150,7 +150,7 @@ async def _open_respring_page_via_automation(lockdown: LockdownClient, url: str)
 
 async def _open_respring_page(lockdown: LockdownClient, url: str, timeout: float = 3.0) -> None:
     inspector = WebinspectorService(lockdown=lockdown)
-    await inspector.connect(timeout)
+    await inspector.connect()
     try:
         # launch Safari on the device
         _ = await inspector.open_app(SAFARI, timeout)
@@ -172,15 +172,21 @@ async def _open_respring_page(lockdown: LockdownClient, url: str, timeout: float
             await inspector.close()
 
 
-def trigger_respring(lockdown: LockdownClient, timeout: float = 3.0) -> None:
-    """Crash SpringBoard on *lockdown*'s device by overloading WebKit."""
+async def trigger_respring_async(lockdown: LockdownClient, timeout: float = 3.0) -> None:
+    """Crash SpringBoard on *lockdown*'s device by overloading WebKit.
+
+    Async form of :func:`trigger_respring`, for callers that already run an
+    event loop. *lockdown* must have been created on the same loop that is
+    currently running; a client created by a previous (finished)
+    ``asyncio.run`` cannot be reused here - its asyncio streams are bound to
+    the old, closed loop and every await raises "Future attached to a
+    different loop".
+    """
     if lockdown is None:
         return
     url = f"{start_respring_server()}/{RESPRING_FILE}"
     try:
-        if os.name == "nt":
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
-        asyncio.run(_open_respring_page(lockdown, url, timeout))
+        await _open_respring_page(lockdown, url, timeout)
     except WebInspectorNotEnabledError:
         raise NuggetError(
             "Could not trigger a respring: Web Inspector is not enabled on your device.\n\n"
@@ -198,3 +204,19 @@ def trigger_respring(lockdown: LockdownClient, timeout: float = 3.0) -> None:
             "Could not launch Safari on your device. Unlock your device and try again, "
             "or restart your device manually to apply the changes."
         ) from None
+
+
+def trigger_respring(lockdown: LockdownClient, timeout: float = 3.0) -> None:
+    """Crash SpringBoard on *lockdown*'s device by overloading WebKit.
+
+    Synchronous facade that runs its own event loop. Because *lockdown*'s
+    asyncio streams are bound to whatever loop created them, only use this
+    with a client that was created inside this very call (or one created on a
+    still-running loop). Prefer :func:`trigger_respring_async` from code that
+    already owns an event loop.
+    """
+    if lockdown is None:
+        return
+    if os.name == "nt":
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    asyncio.run(trigger_respring_async(lockdown, timeout))

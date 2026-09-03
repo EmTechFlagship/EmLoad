@@ -10,17 +10,18 @@ Routing:
   with sparserestore (exploit + domain backup restores), the historical path.
 - iOS 18.2+ (``Device.has_bookrestore()``) uses BookRestore: the AFC method by
   default (no reboot, needs Developer Mode) or the Restore method (a regular
-  MobileBackup2 restore of a crafted Books database). This also covers
-  **iOS 27 Beta 4** (build ``24A5390f``), which is outside the normal
-  supported range (17.0 - 26.9) but still has working BookRestore.
+  MobileBackup2 restore of a crafted Books database).
+- **iOS 27 is hard-blocked** (including 27 Beta 4, build ``24A5390f``):
+  Apple's changed setup flow does not honor the skip-setup files, so applies
+  can leave the device on the white "Swipe up to upgrade" screen.
 - Fully patched devices (neither) raise :class:`NuggetError`.
 """
 
 from __future__ import annotations
 
+import asyncio
 import os
 import plistlib
-import time
 from typing import Any, Callable
 
 from .. import lockdown
@@ -33,12 +34,12 @@ from .bookrestore import (
     create_local_server,
     create_server_folder,
     generate_bldbmanager,
-    perform_bookrestore,
+    perform_bookrestore_async,
 )
-from .constants import MAX_VERSION, MIN_VERSION, Device
+from .constants import MAX_VERSION, MIN_VERSION, Device, Version
 from .errors import NuggetError
 from .restore import FileToRestore, reboot_device, restore_files
-from .respring import trigger_respring
+from .respring import trigger_respring_async
 from .tweaks import tweaks
 from .tweak_classes import BasicPlistTweak, NullifyFileTweak
 
@@ -76,7 +77,7 @@ SKIP_SETUP_STEPS: list[str] = [
 ]
 
 
-def _add_skip_setup(client: Any, files_to_restore: list[FileToRestore]) -> None:
+async def _add_skip_setup(client: Any, files_to_restore: list[FileToRestore]) -> None:
     """Add the skip-setup configuration files to the restore list.
 
     Without these, a device rebooted after a (sparserestore/BookRestore) apply
@@ -89,8 +90,8 @@ def _add_skip_setup(client: Any, files_to_restore: list[FileToRestore]) -> None:
     try:
         from pymobiledevice3.services.mobile_config import MobileConfigService
 
-        existing = run(
-            maybe_await(MobileConfigService(lockdown=client).get_cloud_configuration())
+        existing = await maybe_await(
+            MobileConfigService(lockdown=client).get_cloud_configuration()
         )
         if isinstance(existing, dict):
             cloud_config_plist = existing
@@ -124,13 +125,18 @@ def _add_skip_setup(client: Any, files_to_restore: list[FileToRestore]) -> None:
             domain="ManagedPreferencesDomain",
         )
     )
+    print(
+        f"[skip-setup] added CloudConfigurationDetails.plist "
+        f"(skip {len(cloud_config_plist.get('SkipSetup', []))} steps) "
+        f"+ com.apple.purplebuddy.plist"
+    )
 
 
 # --------------------------------------------------------------------------- #
 # Device connection
 # --------------------------------------------------------------------------- #
-def _device_from_client(serial: str, client: Any) -> Device:
-    values = run(lockdown.all_values(client))
+async def _device_from_client(serial: str, client: Any) -> Device:
+    values = await lockdown.all_values(client)
     return Device(
         udid=serial,
         usb=True,
@@ -288,22 +294,64 @@ def apply_tweaks(
     instead of appearing to reset on-device settings.
 
     Returns ``{"ok": True, "warning": str|None, "mode": ...}``.
+
+    Runs everything - lockdown client creation, the apply, and cleanup - in
+    one event loop: pymobiledevice3's client keeps asyncio streams bound to
+    the loop that created it, so handing a client created by one
+    ``asyncio.run`` to another raises "Future attached to a different loop".
     """
-    client = run(lockdown.create(serial, prefer_usb=True))
+    if os.name == "nt":
+        # The proactor loop breaks blocking-socket operations performed while
+        # a socket is attached to a stream transport (WebInspector TLS
+        # handshake); the selector policy must be in effect before the loop
+        # is created by asyncio.run below.
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    return run(_apply_tweaks_async(
+        serial,
+        respring_after=respring_after,
+        reboot=reboot,
+        apply_method=apply_method,
+        transfer_mode=transfer_mode,
+        skip_setup=skip_setup,
+        on_progress=on_progress,
+    ))
+
+
+async def _apply_tweaks_async(
+    serial: str,
+    *,
+    respring_after: bool = False,
+    reboot: bool = True,
+    apply_method: str = "auto",
+    transfer_mode: str = "localhost",
+    skip_setup: bool = True,
+    on_progress: ProgressFn | None = None,
+) -> dict:
+    """Async core of :func:`apply_tweaks` (runs on one event loop)."""
+    client = await lockdown.create(serial, prefer_usb=True)
     try:
-        dev = _device_from_client(serial, client)
+        dev = await _device_from_client(serial, client)
+        # Hard block on iOS 27: Apple changed the setup flow there and does
+        # not honor the skip-setup files, so a BookRestore apply leaves the
+        # device stuck on the white "Swipe up to upgrade" screen - and
+        # swiping that screen can reset the device. This covers the
+        # previously-excepted iOS 27 Beta 4 (24A5390f) as well.
+        if Version(dev.version).major >= 27:
+            raise NuggetError(
+                "EmLoad blocks tweak applies on iOS 27.\n\n"
+                "Apple changed the setup flow on iOS 27 and does not honor "
+                "the skip-setup files EmLoad restores after a BookRestore "
+                "apply, so the device can get stuck on the white \"Swipe up "
+                "to upgrade\" screen after rebooting - and swiping that "
+                "screen can reset the device.\n\n"
+                f"Your device: iOS {dev.version} ({dev.build}).\n"
+                "This block will be lifted once a verified safe apply path "
+                "exists. Please do not try to force it."
+            )
         if not dev.supported() and not dev.has_bookrestore():
-            # iOS 27 Beta 4 (24A5390f) is above MAX_VERSION but still has
-            # working BookRestore (MobileGestalt was patched from Beta 5 on).
-            note = ""
-            if dev.is_ios27_beta():
-                note = (
-                    "\n\nOnly iOS 27 Beta 4 (build 24A5390f) is supported via "
-                    "BookRestore; MobileGestalt was patched starting with Beta 5."
-                )
             raise NuggetError(
                 f"Your iOS version ({dev.version} ({dev.build})) is not supported. "
-                f"Supported: iOS {MIN_VERSION} - {MAX_VERSION}.{note}"
+                f"Supported: iOS {MIN_VERSION} - {MAX_VERSION}."
             )
         if dev.has_partial_sparserestore():
             mode = "sparserestore"
@@ -320,6 +368,10 @@ def apply_tweaks(
         if not files:
             raise NuggetError("No tweaks are enabled.")
 
+        print(f"Restore file list ({len(files)} files):")
+        for f in files:
+            print(f"  domain={f.domain!r:>64}  {f.restore_path}")
+
         # Add the skip-setup configuration so the post-reboot flow does not
         # reset on-device settings. On partially-supported (exploit-only)
         # devices Nugget only adds it when the restore already uses real
@@ -328,11 +380,17 @@ def apply_tweaks(
             f.domain not in ("", None) for f in files
         )
         if skip_setup and (not dev.partially_supported() or restoring_domains):
-            _add_skip_setup(client, files)
+            await _add_skip_setup(client, files)
             restoring_domains = any(f.domain not in ("", None) for f in files)
+        elif skip_setup:
+            print(
+                "[skip-setup] NOT added: partially-supported device with "
+                "exploit-only files (adding domain files would change the "
+                "restore mode)"
+            )
 
         if mode == "sparserestore":
-            return _apply_sparserestore(
+            return await _apply_sparserestore(
                 client, files, respring_after=respring_after, reboot=reboot,
                 on_progress=on_progress,
             )
@@ -340,7 +398,7 @@ def apply_tweaks(
         # BookRestore device
         domain_files = [f for f in files if f.domain not in ("", None)]
         if apply_method == "restore" or (apply_method == "auto" and domain_files):
-            return _apply_bookrestore_restore(
+            return await _apply_bookrestore_restore(
                 serial, client, files,
                 respring_after=respring_after, reboot=reboot,
                 transfer_mode=transfer_mode, on_progress=on_progress,
@@ -352,7 +410,7 @@ def apply_tweaks(
                 "AFC method. Choose the \"BookRestore Restore\" apply method "
                 "instead (or disable Skip Setup to keep the AFC respring flow)."
             )
-        return _apply_bookrestore_afc(
+        return await _apply_bookrestore_afc(
             serial, client, files,
             reboot=reboot and not respring_after,
             transfer_mode=transfer_mode, on_progress=on_progress,
@@ -360,12 +418,12 @@ def apply_tweaks(
     finally:
         close_dl_connection()
         try:
-            run(lockdown.close(client))
+            await lockdown.close(client)
         except Exception:  # noqa: BLE001 - the device may already be rebooting
             pass
 
 
-def _apply_sparserestore(
+async def _apply_sparserestore(
     client: Any,
     files: list[FileToRestore],
     *,
@@ -375,7 +433,7 @@ def _apply_sparserestore(
 ) -> dict:
     """Historical sparserestore apply (iOS < 18.2)."""
     _progress(on_progress, "apply", None, "Applying changes to files...")
-    restore_files(
+    await restore_files(
         files=files,
         reboot=False,
         lockdown_client=client,
@@ -386,7 +444,7 @@ def _apply_sparserestore(
     if respring_after:
         _progress(on_progress, "respring", None, "Respringing your device...")
         try:
-            trigger_respring(client)
+            await trigger_respring_async(client)
             mode = "respring"
         except Exception as e:  # noqa: BLE001 - surface as a warning, not a failure
             warning = (
@@ -397,7 +455,7 @@ def _apply_sparserestore(
     elif reboot:
         _progress(on_progress, "apply", None, "Rebooting your device...")
         try:
-            reboot_device(reboot=True, lockdown_client=client)
+            await reboot_device(reboot=True, lockdown_client=client)
         except Exception:  # noqa: BLE001 - restore may have already rebooted it
             pass
         mode = "reboot"
@@ -406,7 +464,7 @@ def _apply_sparserestore(
     return {"ok": True, "warning": warning, "mode": mode}
 
 
-def _apply_bookrestore_afc(
+async def _apply_bookrestore_afc(
     serial: str,
     client: Any,
     files: list[FileToRestore],
@@ -427,7 +485,7 @@ def _apply_bookrestore_afc(
         if transfer_mode == "localhost"
         else BookRestoreFileTransferMethod.OnDevice
     )
-    perform_bookrestore(
+    await perform_bookrestore_async(
         files,
         client,
         udid=serial,
@@ -443,7 +501,7 @@ def _apply_bookrestore_afc(
     }
 
 
-def _apply_bookrestore_restore(
+async def _apply_bookrestore_restore(
     serial: str,
     client: Any,
     files: list[FileToRestore],
@@ -478,7 +536,7 @@ def _apply_bookrestore_restore(
             server_prefix=server_prefix, server_folder=server_folder,
         )
 
-    run(_generate())
+    await _generate()
 
     # Keep only domain files; the payload is now inside the Books DB
     restore_list = list(domain_files)
@@ -495,7 +553,10 @@ def _apply_bookrestore_restore(
         )
 
     _progress(on_progress, "restore", None, "Restoring to the device...")
-    restore_files(
+    print(f"BookRestore Restore file list ({len(restore_list)} files):")
+    for f in restore_list:
+        print(f"  domain={f.domain!r:>64}  {f.restore_path}")
+    await restore_files(
         files=restore_list,
         reboot=False,
         lockdown_client=client,
@@ -507,13 +568,13 @@ def _apply_bookrestore_restore(
     cleanup_server_folder()
 
     # give the device a moment to process the restored database
-    time.sleep(2)
+    await asyncio.sleep(2)
 
     warning: str | None = None
     if respring_after:
         _progress(on_progress, "respring", None, "Respringing your device...")
         try:
-            trigger_respring(client)
+            await trigger_respring_async(client)
             mode = "bookrestore-respring"
         except Exception as e:  # noqa: BLE001 - surface as a warning, not a failure
             warning = (
@@ -524,7 +585,7 @@ def _apply_bookrestore_restore(
     elif reboot:
         _progress(on_progress, "bookrestore", None, "Rebooting your device...")
         try:
-            reboot_device(reboot=True, lockdown_client=client)
+            await reboot_device(reboot=True, lockdown_client=client)
         except Exception:  # noqa: BLE001 - restore may have already rebooted it
             pass
         mode = "bookrestore-reboot"
@@ -534,14 +595,30 @@ def _apply_bookrestore_restore(
 
 
 def respring_device(serial: str, *, on_progress: ProgressFn | None = None) -> dict:
-    """Respring ``serial``'s device (best-effort; raises NuggetError otherwise)."""
-    client = run(lockdown.create(serial, prefer_usb=True))
-    try:
-        _progress(on_progress, "respring", None, "Starting respring...")
-        trigger_respring(client)
-        return {"ok": True}
-    finally:
+    """Respring ``serial``'s device (best-effort; raises NuggetError otherwise).
+
+    The lockdown client and the respring run inside one event loop: a client
+    created by its own ``asyncio.run`` cannot be handed to another
+    ``asyncio.run`` (each finishes by closing its loop, so reusing its
+    asyncio streams raises "Future attached to a different loop").
+    """
+
+    async def _run() -> dict:
+        client = await lockdown.create(serial, prefer_usb=True)
         try:
-            run(lockdown.close(client))
-        except Exception:  # noqa: BLE001 - the device may already be respringing
-            pass
+            _progress(on_progress, "respring", None, "Starting respring...")
+            await trigger_respring_async(client)
+            return {"ok": True}
+        finally:
+            try:
+                await lockdown.close(client)
+            except Exception:  # noqa: BLE001 - the device may already be respringing
+                pass
+
+    if os.name == "nt":
+        # The proactor loop breaks blocking-socket operations performed while
+        # the socket is attached to a stream transport (WebInspector TLS
+        # handshake); the selector policy must be in effect before the loop
+        # is created by asyncio.run below.
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
+    return run(_run())

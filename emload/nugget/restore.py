@@ -25,6 +25,7 @@ from pymobiledevice3.services.diagnostics import DiagnosticsService
 from pymobiledevice3.services.installation_proxy import InstallationProxyService
 from pymobiledevice3.services.mobilebackup2 import Mobilebackup2Service
 
+from .._asyncutil import maybe_await
 from . import backup
 from .errors import NuggetError
 from .mbdb import _FileMode
@@ -35,13 +36,14 @@ ProgressFn = Callable[[Any], None]
 # --------------------------------------------------------------------------- #
 # Device-level actions
 # --------------------------------------------------------------------------- #
-def reboot_device(reboot: bool = False, lockdown_client: Any = None) -> None:
+async def reboot_device(reboot: bool = False, lockdown_client: Any = None) -> None:
+    """Ask the device to reboot (async; must run on the client's loop)."""
     if reboot and lockdown_client is not None:
-        with DiagnosticsService(lockdown_client) as diagnostics_service:
-            diagnostics_service.restart()
+        async with DiagnosticsService(lockdown_client) as diagnostics_service:
+            await diagnostics_service.restart()
 
 
-def perform_restore(
+async def perform_restore(
     backup_to_restore: backup.Backup,
     reboot: bool = False,
     lockdown_client: Any = None,
@@ -52,9 +54,9 @@ def perform_restore(
             backup_to_restore.write_to_directory(Path(backup_dir))
 
             if lockdown_client is None:
-                lockdown_client = create_using_usbmux()
-            with Mobilebackup2Service(lockdown_client) as mb:
-                mb.restore(
+                lockdown_client = await create_using_usbmux()
+            async with Mobilebackup2Service(lockdown_client) as mb:
+                await mb.restore(
                     backup_dir,
                     system=True,
                     reboot=False,
@@ -64,7 +66,7 @@ def perform_restore(
                     skip_apps=True,
                 )
             # reboot the device
-            reboot_device(reboot, lockdown_client)
+            await reboot_device(reboot, lockdown_client)
     except PyMobileDevice3Exception as e:
         if "Find My" in str(e):
             raise NuggetError(
@@ -75,7 +77,7 @@ def perform_restore(
         elif "crash_on_purpose" not in str(e):
             raise
         else:
-            reboot_device(reboot, lockdown_client)
+            await reboot_device(reboot, lockdown_client)
 
 
 # --------------------------------------------------------------------------- #
@@ -228,13 +230,18 @@ def has_sparserestore_capability(lockdown_client: Any = None) -> bool:
 
 
 # files is a list of FileToRestore objects
-def restore_files(
+async def restore_files(
     files: list[FileToRestore],
     reboot: bool = False,
     lockdown_client: Any = None,
     progress_callback: ProgressFn = lambda x: None,
 ) -> None:
-    """Restore *files* through the (sparserestore) backup mechanism."""
+    """Restore *files* through the (sparserestore) backup mechanism.
+
+    Async: *lockdown_client* must belong to the currently running event loop
+    (see :func:`emload.nugget.apply.apply_tweaks`, which runs the whole apply
+    in a single loop).
+    """
     # create the files to be backed up
     files_list: list[backup.BackupFile] = []
     apps_list: list[backup.AppBundle] = []
@@ -259,8 +266,10 @@ def restore_files(
                 bundle_id = last_domain.removeprefix("AppDomain-")
                 if bundle_id not in active_bundle_ids:
                     if apps is None:
-                        apps = InstallationProxyService(lockdown=lockdown_client).get_apps(
-                            application_type="Any", calculate_sizes=False
+                        apps = await maybe_await(
+                            InstallationProxyService(lockdown=lockdown_client).get_apps(
+                                application_type="Any", calculate_sizes=False
+                            )
                         )
                     app_info = apps[bundle_id]
                     active_bundle_ids.append(bundle_id)
@@ -290,7 +299,7 @@ def restore_files(
         print(f"{fi.domain}, {fi.path}")
 
     try:
-        perform_restore(
+        await perform_restore(
             backup_to_restore=back,
             reboot=reboot,
             lockdown_client=lockdown_client,

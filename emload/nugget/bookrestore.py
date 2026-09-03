@@ -57,7 +57,7 @@ from pymobiledevice3.services.dvt.instruments.dvt_provider import DvtProvider
 from pymobiledevice3.services.dvt.instruments.process_control import ProcessControl
 from pymobiledevice3.services.os_trace import OsTraceService
 
-from .._asyncutil import maybe_await, run
+from .._asyncutil import maybe_await
 from .errors import NuggetError
 from .restore import FileToRestore, reboot_device
 
@@ -544,7 +544,7 @@ async def apply_bookrestore_files(
 
     if do_full_reboot:
         progress_callback("Rebooting")
-        reboot_device(True, lockdown_client=rsd)
+        await reboot_device(True, lockdown_client=rsd)
     else:
         progress_callback("Respringing")
         procs = (await OsTraceService(lockdown=rsd).get_pid_list()).get("Payload")
@@ -597,6 +597,44 @@ async def _create_connection_context(
             cleanup_server_folder()
 
 
+async def perform_bookrestore_async(
+    files: list[FileToRestore],
+    lockdown_client: Any,
+    udid: str,
+    books_uuid_callback: BooksContainerUuid | None = None,
+    progress_callback: Callable[[str], None] | None = None,
+    transfer_mode: BookRestoreFileTransferMethod = BookRestoreFileTransferMethod.LocalHost,
+    do_full_reboot: bool = False,
+) -> None:
+    """Apply *files* with the BookRestore AFC method.
+
+    Async form of :func:`perform_bookrestore` for callers that already run an
+    event loop (``lockdown_client`` must belong to that loop). Requires
+    Developer Mode on the device (prompts to reveal the setting otherwise).
+    *udid* is the device UDID used for the RSD tunnel.
+    """
+    dev_mode = await maybe_await(lockdown_client.get_developer_mode_status())
+    if not dev_mode:
+        if progress_callback:
+            progress_callback("Enabling Developer Mode...")
+        await maybe_await(
+            AmfiService(lockdown=lockdown_client).reveal_developer_mode_option_in_ui()
+        )
+        raise NuggetError(
+            "You must enable Developer Mode on your device. You can do it in the "
+            "Settings app.\n\n"
+            "BookRestore with the AFC method requires Developer Mode to apply, "
+            "which you can enable at the bottom of Settings > Privacy & Security "
+            "> Developer Mode on your iPhone or iPad. Alternatively, use the "
+            "\"BookRestore Restore\" apply method."
+        )
+    if books_uuid_callback is None:
+        books_uuid_callback = BooksContainerUuid()
+    await _create_connection_context(
+        files, udid, books_uuid_callback, progress_callback, transfer_mode, do_full_reboot
+    )
+
+
 def perform_bookrestore(
     files: list[FileToRestore],
     lockdown_client: Any,
@@ -608,28 +646,15 @@ def perform_bookrestore(
 ) -> None:
     """Apply *files* with the BookRestore AFC method (blocking).
 
-    Requires Developer Mode on the device (prompts to reveal the setting
-    otherwise). *udid* is the device UDID used for the RSD tunnel.
+    Runs its own event loop, so only pass a ``lockdown_client`` that was
+    created inside this call (or one owned by a still-running loop). Prefer
+    :func:`perform_bookrestore_async` from code that already owns a loop.
     """
-    dev_mode = run(maybe_await(lockdown_client.get_developer_mode_status()))
-    if not dev_mode:
-        if progress_callback:
-            progress_callback("Enabling Developer Mode...")
-        run(maybe_await(AmfiService(lockdown=lockdown_client).reveal_developer_mode_option_in_ui()))
-        raise NuggetError(
-            "You must enable Developer Mode on your device. You can do it in the "
-            "Settings app.\n\n"
-            "BookRestore with the AFC method requires Developer Mode to apply, "
-            "which you can enable at the bottom of Settings > Privacy & Security "
-            "> Developer Mode on your iPhone or iPad. Alternatively, use the "
-            "\"BookRestore Restore\" apply method."
-        )
-    if books_uuid_callback is None:
-        books_uuid_callback = BooksContainerUuid()
     if os.name == "nt":
         asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     asyncio.run(
-        _create_connection_context(
-            files, udid, books_uuid_callback, progress_callback, transfer_mode, do_full_reboot
+        perform_bookrestore_async(
+            files, lockdown_client, udid, books_uuid_callback,
+            progress_callback, transfer_mode, do_full_reboot,
         )
     )
