@@ -51,7 +51,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import __version__, apps, device, doctor, gsa, ipa, paths, registry, sideload, signing
+from .. import __version__, apps, device, doctor, gsa, ipa, paths, provision, registry, sideload, signing
 from ..nugget import respring_device
 from .dialogs import LoginDialog
 from .nugget_dialogs import DaemonsDialog, LiquidGlassDialog, SpringBoardDialog
@@ -195,14 +195,24 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------ #
     # Worker plumbing
     # ------------------------------------------------------------------ #
-    def run_task(self, fn, *args, on_done=None, **kwargs):
-        """Run ``fn`` on a worker thread; ``on_done(result)`` on success."""
+    def run_task(self, fn, *args, on_done=None, on_error=None, **kwargs):
+        """Run ``fn`` on a worker thread; ``on_done(result)`` on success.
+
+        ``on_error(worker, message)``, when given, replaces the default error
+        dialog - used for background niceties that must not shout at the user.
+        """
         worker = TaskWorker(fn, *args, **kwargs)
         self._workers.append(worker)
         worker.finished_ok.connect(
             lambda result: self._task_done(worker, result, on_done)
         )
-        worker.failed.connect(lambda msg: self._task_failed(worker, msg))
+        worker.failed.connect(
+            lambda msg: (
+                self._task_failed(worker, msg)
+                if on_error is None
+                else on_error(worker, msg)
+            )
+        )
         worker.start()
         return worker
 
@@ -265,12 +275,40 @@ class MainWindow(QMainWindow):
         self.run_task(device.list_devices, on_done=self._devices_changed)
 
     def _devices_changed(self, entries: list[dict[str, Any]]) -> None:
+        previous = {str(e.get("serial")) for e in self.devices if e.get("serial")}
+        current = {str(e.get("serial")) for e in entries if e.get("serial")}
         self.devices = entries
         self.refresh_target_combo()
         self.refresh_misc_combo()
         # Enriching every device needs a lockdown read per device - keep it off
         # the UI thread.
         self.run_task(self._enrich_devices, entries, on_done=self._populate_devices)
+
+        # A device just plugged in: if the cached certificate + profile belong to
+        # a different phone, delete them and provision fresh ones for this one.
+        # Silent when not signed in / nothing cached / already up to date - the
+        # engine says so in its result and only "reprovisioned" is worth showing.
+        for serial in sorted(current - previous):
+            self.run_task(
+                provision.ensure_provisioned_for_device,
+                serial,
+                on_done=lambda result, s=serial: self._auto_provision_done(s, result),
+                on_error=lambda _worker, msg, s=serial: self.statusBar().showMessage(
+                    f"Could not provision {s}: {msg}", 8000
+                ),
+            )
+
+    def _auto_provision_done(self, serial: str, result: dict[str, Any]) -> None:
+        if result.get("status") != "reprovisioned":
+            return
+        name = result.get("device_name") or serial
+        message = f"Provisioned {name} with a fresh certificate + profile"
+        if not result.get("profile_installed"):
+            message += " (profile not installed on the device)"
+        warning = result.get("warning")
+        if warning:
+            self.log(f"Auto-provision: {warning}")
+        self.statusBar().showMessage(message, 8000)
 
     @staticmethod
     def _enrich_devices(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -9,6 +9,8 @@
     emload logout                sign out
     emload account               show the signed-in account
     emload teams                 list Apple developer teams
+    emload provision <bundle_id> provision, then install the team's profile
+                                 on the connected device (needs sign-in)
     emload inspect <ipa>         read an IPA's identity without extracting it
     emload sideload <ipa>        provision + sign + install in one step
     emload refresh [--all]       re-sign + reinstall recorded apps before expiry
@@ -16,6 +18,8 @@
     emload forget <bundle_id>    stop tracking a sideload
     emload apps                  list apps installed on the device
     emload uninstall <bundle_id> remove an app from the device
+    emload profiles              list provisioning profiles on the device
+    emload unprovision <uuid>    remove a provisioning profile from the device
     emload signed [--clean]      report / delete kept signed IPAs
     emload setup                 download zsign (needed for signing)
     emload gui                   launch the desktop app
@@ -175,6 +179,18 @@ def cmd_teams(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_provision(args: argparse.Namespace) -> int:
+    app_name = args.name or args.bundle_id.rpartition(".")[2] or "EmLoad App"
+    result = provision.provision_device(
+        args.bundle_id,
+        args.udid,
+        app_name=app_name,
+        on_step=lambda message: _progress(args)("provision", None, message),
+    )
+    _emit(args, result)
+    return 0
+
+
 def developer_list_teams() -> list[dict[str, Any]]:
     from . import developer
     return developer.list_teams()
@@ -260,6 +276,20 @@ def cmd_uninstall(args: argparse.Namespace) -> int:
     return 0
 
 
+def cmd_profiles(args: argparse.Namespace) -> int:
+    _emit(args, provision.list_profiles(args.udid))
+    return 0
+
+
+def cmd_unprovision(args: argparse.Namespace) -> int:
+    if args.all:
+        result = provision.clear_profiles(args.udid)
+    else:
+        result = provision.remove_profile(args.uuid, args.udid)
+    _emit(args, result)
+    return 0
+
+
 def cmd_signed(args: argparse.Namespace) -> int:
     if args.clean:
         _emit(args, sideload.clean_signed(args.directory))
@@ -333,6 +363,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("teams", parents=[common], help="list Apple developer teams")
 
+    provision_parser = sub.add_parser(
+        "provision", parents=[common, target],
+        help="provision, then install the team's profile on the connected device",
+    )
+    provision_parser.add_argument("bundle_id", help="bundle identifier to provision")
+    provision_parser.add_argument("--name", default=None,
+                                  help="App ID name to register (default: derived from the bundle id)")
+
     inspect_parser = sub.add_parser("inspect", parents=[common], help="read an IPA's identity")
     inspect_parser.add_argument("ipa", help="path to an .ipa file")
 
@@ -373,6 +411,18 @@ def build_parser() -> argparse.ArgumentParser:
     uninstall_parser = sub.add_parser("uninstall", parents=[common, target],
                                       help="uninstall an app by bundle id")
     uninstall_parser.add_argument("bundle_id", help="bundle identifier to remove")
+
+    sub.add_parser("profiles", parents=[common, target],
+                   help="list provisioning profiles installed on the device")
+
+    unprovision_parser = sub.add_parser(
+        "unprovision", parents=[common, target],
+        help="remove a provisioning profile from the device",
+    )
+    unprovision_parser.add_argument("uuid", nargs="?", default=None,
+                                    help="profile UUID to remove (or use --all)")
+    unprovision_parser.add_argument("--all", action="store_true",
+                                    help="remove every provisioning profile on the device")
 
     signed_parser = sub.add_parser("signed", parents=[common], help="report kept signed IPAs")
     signed_parser.add_argument("--clean", action="store_true", help="delete them")
@@ -420,6 +470,7 @@ def dispatch(args: argparse.Namespace) -> int:
         "account": cmd_account,
         "logout": cmd_logout,
         "teams": cmd_teams,
+        "provision": cmd_provision,
         "inspect": cmd_inspect,
         "sideload": cmd_sideload,
         "refresh": cmd_refresh,
@@ -427,6 +478,8 @@ def dispatch(args: argparse.Namespace) -> int:
         "forget": cmd_forget,
         "apps": cmd_apps,
         "uninstall": cmd_uninstall,
+        "profiles": cmd_profiles,
+        "unprovision": cmd_unprovision,
         "signed": cmd_signed,
         "setup": cmd_setup,
         "gui": cmd_gui,

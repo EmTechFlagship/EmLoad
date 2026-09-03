@@ -82,6 +82,8 @@ emload login --email you@icloud.com        sign in (prompts for password;
 emload login --email x --password y --code 123456   finish 2FA
 emload account               show the signed-in account
 emload logout [--email]      sign out
+emload provision <bundle_id> provision the signed-in team (cert + device + App ID)
+                             and install the profile on the connected device
 emload inspect app.ipa       read an IPA's identity without extracting it
 emload sideload app.ipa [options]   provision + sign + install in one step
 emload refresh [--all]       re-sign + reinstall recorded apps before expiry
@@ -89,6 +91,8 @@ emload installs              list recorded sideloads with days left
 emload forget <bundle_id>    stop tracking a sideload
 emload apps                  list apps installed on the device
 emload uninstall <bundle_id> remove an app from the device
+emload profiles              list provisioning profiles installed on the device
+emload unprovision <uuid>    remove one provisioning profile (--all removes every one)
 emload signed [--clean]      report / delete kept signed IPAs
 emload setup                 download zsign (needed for signing)
 emload gui                   launch the desktop app
@@ -134,7 +138,12 @@ emload gui
 The desktop app has a sidebar with seven pages:
 
 - **Devices** — live inventory (USB + Wi-Fi), refreshed automatically as
-  devices attach/detach
+  devices attach/detach. When a phone plugs in and the cached provisioning
+  profile belongs to a *different* device, EmLoad registers the new device and
+  installs a fresh profile on it automatically — reusing the same development
+  certificate (certificates aren't device-specific, so re-issuing one per
+  device would trip Apple's certificate limit; you can watch the profile
+  install in the status bar)
 - **Sideload** — drag & drop an `.ipa`, see its icon/name/version, tweak
   options, pick the target device, and watch the install with a live progress
   bar and log
