@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "emload"
+version = "0.1.0"
+description = "Sideload iOS apps with a free Apple ID - CLI plus a PySide6 desktop app (AltServer-style)"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "EmLoad contributors" }]
+keywords = ["ios", "sideload", "ipa", "altstore", "altserver", "apple-id"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Operating System :: MacOS",
+    "Programming Language :: Python :: 3",
+    "Topic :: Software Development :: Build Tools",
+]
+
+dependencies = [
+    "pymobiledevice3>=10.0.4",
+    "Anisette>=1.2.4",
+    "srp>=1.0.22",
+    "cryptography>=44",
+    "certifi>=2024.1.1",
+    "requests>=2.31",
+]
+
+[project.optional-dependencies]
+gui = ["PySide6>=6.6"]
+dev = ["pytest>=8", "pytest-cov"]
+
+[project.scripts]
+emload = "emload.cli:main"
+emload-gui = "emload.gui.app:main"
+
+[tool.setuptools.packages.find]
+include = ["emload*"]
+
+[tool.setuptools.package-data]
+emload = ["certs/*.pem", "nugget/assets/*", "nugget/assets/bookrestore/*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

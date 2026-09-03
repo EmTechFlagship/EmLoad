@@ -1,0 +1,39 @@
+"""Absolute on-device paths each tweak family writes to.
+
+Ported from Nugget27 (AGPL-3.0): ``src/tweaks/basic_plist_locations.py``.
+"""
+
+from __future__ import annotations
+
+from enum import Enum
+
+
+class FileLocation(Enum):
+    # Mobile Gestalt
+    resolution = "/var/Managed Preferences/mobile/com.apple.iokit.IOMobileGraphicsFamily.plist"
+    mga = "/var/containers/Shared/SystemGroup/systemgroup.com.apple.mobilegestaltcache/Library/Caches/com.apple.MobileGestalt.plist"
+
+    # Feature Flags
+    featureflags = "/var/preferences/FeatureFlags/Global.plist"
+
+    # SpringBoard Options
+    springboard = "/var/Managed Preferences/mobile/com.apple.springboard.plist"
+    footnote = "/var/containers/Shared/SystemGroup/systemgroup.com.apple.configurationprofiles/Library/ConfigurationProfiles/SharedDeviceConfiguration.plist"
+    airdrop = "/var/Managed Preferences/mobile/com.apple.sharingd.plist"
+    nanoregistry = "/var/mobile/Library/Preferences/com.apple.NanoRegistry.plist"
+
+    # Internal Options
+    globalPreferences = "/var/Managed Preferences/mobile/.GlobalPreferences.plist"
+    appStore = "/var/Managed Preferences/mobile/com.apple.AppStore.plist"
+    backboardd = "/var/Managed Preferences/mobile/com.apple.backboardd.plist"
+    coreMotion = "/var/Managed Preferences/mobile/com.apple.CoreMotion.plist"
+    pasteboard = "/var/Managed Preferences/mobile/com.apple.Pasteboard.plist"
+    notes = "/var/Managed Preferences/mobile/com.apple.mobilenotes.plist"
+    uikit = "/var/Managed Preferences/mobile/com.apple.UIKit.plist"
+
+    # Daemons
+    disabledDaemons = "/var/db/com.apple.xpc.launchd/disabled.plist"
+    screentime = "/var/mobile/Library/Preferences/ScreenTimeAgent.plist"
+
+    # Risky Options
+    ota = "/var/Managed Preferences/mobile/com.apple.MobileAsset.plist"
