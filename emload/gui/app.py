@@ -18,7 +18,9 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
 import sys
+import traceback
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -97,6 +99,31 @@ def _app_icon() -> QIcon:
     if icon_file.is_file():
         icon.addFile(str(icon_file))
     return icon
+
+
+def _install_excepthook() -> None:
+    """Keep the GUI alive when something unexpected happens in a Qt slot.
+
+    Under ``pythonw`` (``run.bat``) there is no console, so an unhandled
+    exception in the event loop - e.g. right after a sideload finishes - would
+    close the app without a trace. Log it to ``%LOCALAPPDATA%\\EmLoad\\gui-errors.log``
+    instead, and keep the window open.
+    """
+    log_path = paths.data_dir() / "gui-errors.log"
+    logging.basicConfig(
+        filename=log_path,
+        level=logging.WARNING,
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
+    logger = logging.getLogger("emload.gui")
+
+    def hook(exc_type, exc_value, exc_tb) -> None:  # noqa: ANN001 - sys.excepthook signature
+        logger.error(
+            "Unhandled exception (keeping the app open):\n%s",
+            "".join(traceback.format_exception(exc_type, exc_value, exc_tb)),
+        )
+
+    sys.excepthook = hook
 
 
 class MainWindow(QMainWindow):
@@ -219,7 +246,11 @@ class MainWindow(QMainWindow):
     def _task_done(self, worker, result, on_done) -> None:
         self._prune_workers(worker)
         if on_done:
-            on_done(result)
+            try:
+                on_done(result)
+            except Exception as exc:  # noqa: BLE001 - a UI bug must never close the app
+                self.log(f"Error after task finished: {exc}")
+                self.statusBar().showMessage("Finished, but the UI hit an error", 8000)
 
     def _task_failed(self, worker, message: str) -> None:
         self._prune_workers(worker)
@@ -823,6 +854,16 @@ class MainWindow(QMainWindow):
         self.run_task(gsa.status, on_done=self._account_status)
 
     def _account_status(self, status: dict[str, Any]) -> None:
+        if not status.get("authenticated") and status.get("account_count", 0) > 0:
+            # A saved Apple session exists but none is marked active - resume the
+            # most recent one so opening the app signs you back in automatically.
+            self.account_status.setText("Resuming saved session\u2026")
+            self.run_task(
+                self._resume_saved_session,
+                on_done=self._session_resumed,
+                on_error=lambda _w, _m: self.refresh_account(),
+            )
+            return
         if not status.get("authenticated"):
             self.account_status.setText("Not signed in.")
             self.sign_in_button.setEnabled(True)
@@ -836,6 +877,21 @@ class MainWindow(QMainWindow):
             )
             self.sign_in_button.setEnabled(True)
             self.sign_out_button.setEnabled(True)
+
+    @staticmethod
+    def _resume_saved_session() -> dict[str, Any]:
+        """Pick the most recent session that still has a developer token."""
+        for account in gsa.list_accounts():
+            if account.get("has_auth_token"):
+                return gsa.use_account(account["email"])
+        return {"status": "nothing_to_resume"}
+
+    def _session_resumed(self, result: dict[str, Any]) -> None:
+        if result.get("status") == "active":
+            email = result.get("email")
+            self.log(f"Auto signed in as {email}.")
+            self.statusBar().showMessage(f"Auto signed in as {email}", 8000)
+        self.refresh_account()
 
     def show_login_dialog(self) -> None:
         self._login_dialog = LoginDialog(self)
@@ -1030,6 +1086,7 @@ class MainWindow(QMainWindow):
 
 
 def run_gui() -> int:
+    _install_excepthook()
     app = QApplication(sys.argv)
     app.setApplicationName("EmLoad")
     app.setOrganizationName("EmLoad")
