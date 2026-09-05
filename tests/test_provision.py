@@ -405,3 +405,115 @@ def test_ensure_certificate_recovers_from_7460(monkeypatch, tmp_path):
     assert serial == "S-NEW"
     assert x509.load_der_x509_certificate(cert_der).subject.rfc4514_string() == "CN=EmLoad"
     assert key_pem == generated["key_pem"]
+
+
+# --------------------------------------------------------------------------- #
+# Regenerating the provisioning profile after an integrity-check failure
+# --------------------------------------------------------------------------- #
+def test_regenerate_profile_deletes_old_and_fetches_fresh(monkeypatch, tmp_path):
+    from emload import paths
+
+    _write_bundle(tmp_path)  # seeds the old profile (UUID ...abcdef) + bundle cache
+    monkeypatch.setattr(
+        provision.gsa, "load_session", lambda email=None: {"email": _ACCOUNT}
+    )
+
+    fresh_profile = tmp_path / "fresh.mobileprovision"
+    fresh_profile.write_bytes(_fake_profile())
+    removed: list[str] = []
+
+    def fake_ensure(bundle_id, udid, **kwargs):
+        assert bundle_id == "com.example.Demo"
+        assert udid == "deadbeef"
+        return {
+            "team_id": "ABCDE12345",
+            "bundle_id": bundle_id,
+            "udid": udid,
+            "profile_path": str(fresh_profile),
+            "p12_path": "n/a",
+            "p12_password": "n/a",
+            "app_id_id": "ABCDE12345.com.example.Demo",
+        }
+
+    def fake_remove(uuid, udid=None):
+        removed.append(uuid)
+        return {"removed": True}
+
+    monkeypatch.setattr(provision, "ensure_signing_assets", fake_ensure)
+    monkeypatch.setattr(provision, "remove_profile", fake_remove)
+
+    result = provision.regenerate_profile("com.example.Demo", "deadbeef")
+
+    # The fresh profile replaces the old one.
+    assert result["profile_path"] == str(fresh_profile)
+    assert removed == ["01234567-89AB-CDEF-0123-456789ABCDEF"]
+    # The old profile + bundle cache are gone, so nothing points at them.
+    folder = paths.signing_dir(_slug())
+    assert not (folder / "profile.mobileprovision").exists()
+    assert not (folder / "bundle.json").exists()
+
+
+def test_regenerate_profile_removes_old_by_app_id_when_uuid_missing(monkeypatch, tmp_path):
+    """No cached profile file (unknown UUID): retire any on-device profile for the app."""
+    import json
+
+    from emload import paths
+
+    folder = paths.signing_dir(_slug())
+    folder.mkdir(parents=True, exist_ok=True)
+    # Only the bundle cache survives; it still names the App ID.
+    (folder / "bundle.json").write_text(
+        json.dumps({"app_id_id": "ABCDE12345.com.example.Demo"}), encoding="utf-8"
+    )
+    monkeypatch.setattr(
+        provision.gsa, "load_session", lambda email=None: {"email": _ACCOUNT}
+    )
+
+    fresh_profile = tmp_path / "fresh.mobileprovision"
+    fresh_profile.write_bytes(_fake_profile())
+    monkeypatch.setattr(
+        provision,
+        "ensure_signing_assets",
+        lambda bundle_id, udid, **kw: {"profile_path": str(fresh_profile)},
+    )
+    monkeypatch.setattr(
+        provision,
+        "list_profiles",
+        lambda udid: [
+            {"uuid": "STALE-1", "app_id": "ABCDE12345.com.example.Demo"},
+            {"uuid": "OTHER-1", "app_id": "ABCDE12345.com.other.App"},
+        ],
+    )
+    removed: list[str] = []
+    monkeypatch.setattr(
+        provision, "remove_profile", lambda uuid, udid=None: removed.append(uuid)
+    )
+
+    provision.regenerate_profile("com.example.Demo", "deadbeef")
+
+    assert removed == ["STALE-1"]  # only the profile for this app id
+
+
+def test_regenerate_profile_tolerates_device_removal_failure(monkeypatch, tmp_path):
+    """A locked/unreachable device must not stop the fresh profile from being issued."""
+    _write_bundle(tmp_path)
+    monkeypatch.setattr(
+        provision.gsa, "load_session", lambda email=None: {"email": _ACCOUNT}
+    )
+
+    fresh_profile = tmp_path / "fresh.mobileprovision"
+    fresh_profile.write_bytes(_fake_profile())
+    monkeypatch.setattr(
+        provision,
+        "ensure_signing_assets",
+        lambda bundle_id, udid, **kw: {"profile_path": str(fresh_profile)},
+    )
+    monkeypatch.setattr(
+        provision,
+        "remove_profile",
+        lambda uuid, udid=None: (_ for _ in ()).throw(RuntimeError("device locked")),
+    )
+
+    result = provision.regenerate_profile("com.example.Demo", "deadbeef")
+
+    assert result["profile_path"] == str(fresh_profile)

@@ -51,7 +51,10 @@ class TaskWorker(QThread):
             if _accepts_on_progress(self._fn, kwargs):
                 kwargs["on_progress"] = on_progress
             result = self._fn(*self._args, **kwargs)
-        except Exception as exc:  # noqa: BLE001 - report every failure to the UI
+        except BaseException as exc:  # noqa: BLE001 - report every failure to the UI
+            # PySide6 terminates the whole app when an exception escapes
+            # QThread.run(), so even a SystemExit/KeyboardInterrupt must become
+            # a plain failure signal instead of killing the UI.
             self.failed.emit(str(exc))
             return
         self.finished_ok.emit(result if result is not None else {})

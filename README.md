@@ -34,6 +34,10 @@ through `pymobiledevice3`.
   (display name, bundle id, version) and extension stripping
 - **7-day refresh**: every install is recorded with its expiry; `emload refresh`
   (or the GUI's Library tab) re-signs and reinstalls before the profile expires
+- **Automatic profile repair**: if the device rejects an app during
+  verification, EmLoad retires the old provisioning profile (from the cache and
+  the device) and automatically issues, re-signs, and reinstalls with a fresh
+  one — up to 2 re-issues per install
 - **Live install progress** in both CLI and GUI (upload MBs + installd phases)
 - **Miscellaneous tweaks (Nugget-based)**: SpringBoard options, daemon toggles
   and Liquid Glass settings applied with the sparserestore backup-restore

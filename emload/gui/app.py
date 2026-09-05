@@ -25,7 +25,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt
+from PySide6.QtCore import QSize, Qt, Signal
 from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -127,6 +127,12 @@ def _install_excepthook() -> None:
 
 
 class MainWindow(QMainWindow):
+    # Progress from the sideload worker thread, forwarded to the UI thread.
+    # Widgets must never be touched from a worker thread - PySide6 crashes
+    # natively (access violation, no popup, no traceback), so the worker only
+    # emits this signal and the slot below updates the UI.
+    sideload_progress = Signal(str, object, object)  # phase, percent, step
+
     def __init__(self) -> None:
         super().__init__()
         self.setWindowTitle(f"EmLoad {__version__} - iOS Sideloading")
@@ -466,6 +472,7 @@ class MainWindow(QMainWindow):
         self.log_view.setMaximumBlockCount(3000)
         layout.addWidget(self.log_view, 1)
 
+        self.sideload_progress.connect(self._on_sideload_progress)
         return page, "Sideload"
 
     def browse_ipa(self) -> None:
@@ -540,10 +547,9 @@ class MainWindow(QMainWindow):
         self.log("Starting sideload\u2026")
 
         def on_progress(phase: str, percent: Any, step: str | None) -> None:
-            if percent is not None:
-                self.progress_bar.setValue(int(percent))
-            if step:
-                self.log(f"[{phase}] {step}")
+            # Runs on the worker thread: only forward through the signal - the
+            # slot updates widgets on the UI thread.
+            self.sideload_progress.emit(phase, percent, step)
 
         keep_signed = self.keep_signed_check.isChecked() or self.keep_signed_default.isChecked()
 
@@ -562,15 +568,51 @@ class MainWindow(QMainWindow):
                 on_progress=on_progress,
             )
 
-        self.run_task(run, on_done=self._sideload_done)
+        self.run_task(run, on_done=self._sideload_done, on_error=self._sideload_failed)
+
+    def _on_sideload_progress(self, phase: str, percent: Any, step: str | None) -> None:
+        """UI-thread slot for sideload progress (see :attr:`sideload_progress`)."""
+        if percent is not None:
+            self.progress_bar.setValue(int(percent))
+        if step:
+            self.log(f"[{phase}] {step}")
+
+    def _sideload_failed(self, worker, message: str) -> None:
+        """A sideload worker raised: tell the user in an explicit error popup."""
+        if worker is not None:
+            self._prune_workers(worker)
+        self.sideload_button.setEnabled(True)
+        self.log(f"Sideload failed: {message}")
+        self.statusBar().showMessage("Sideload failed", 8000)
+        app_name = (self._current_info or {}).get("display_name") or (
+            self._current_info or {}
+        ).get("bundle_id") or "the app"
+        udid = self.target_combo.currentData() or "your device"
+        QMessageBox.critical(
+            self,
+            "Sideload failed",
+            f"{app_name} did not install on {udid}.\n\n{message}",
+        )
 
     def _sideload_done(self, result: dict[str, Any]) -> None:
+        if result.get("status") != "installed":
+            # The engine returned without raising but still did not install the
+            # app - surface it the same way as a raised failure.
+            detail = result.get("error") or result.get("status") or str(result)
+            self._sideload_failed(None, str(detail))
+            return
         self.sideload_button.setEnabled(True)
         self.progress_bar.setValue(100)
         self.log(
             f"Installed {result.get('name')} ({result.get('bundle_id')}) on "
             f"{result.get('udid')}."
         )
+        regenerated = result.get("profile_regenerations") or 0
+        if regenerated:
+            self.log(
+                f"Device verification failed {regenerated} time(s); re-issued a fresh "
+                "provisioning profile and retired the old one."
+            )
         expires = result.get("expires_at")
         if expires:
             try:

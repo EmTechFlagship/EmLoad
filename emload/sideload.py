@@ -40,6 +40,12 @@ SCRATCH_PREFIX = "eml_"
 _MAX_PATH = 259
 _ZSIGN_HEADROOM = 34
 
+# When installd refuses an app because its signature/profile failed verification,
+# the cure is a fresh provisioning profile (a new UUID), not more of the same
+# bytes. Bound the automatic re-issue so a device stuck in a bad state cannot
+# burn Apple's profile downloads forever: 1 initial attempt + 2 regenerations.
+MAX_PROFILE_REGENERATIONS = 2
+
 
 class SideloadError(EmLoadError):
     """A sideload could not be completed (device, IPA, or option problem)."""
@@ -201,27 +207,50 @@ def run_sideload(
     progress("sign", None, "Signing the app\u2026")
     target_dir, scratch = _open_signed_dir(signed_dir, ipa_module.deepest_entry(ipa_path))
     output = str(target_dir / f"{Path(ipa_path).stem}{SIGNED_SUFFIX}")
+    profile_regenerations = 0
     try:
-        signing.sign_ipa(
-            ipa_path, output,
-            p12_path=bundle["p12_path"],
-            p12_password=bundle["p12_password"],
-            profile_path=bundle["profile_path"],
-            bundle_id=target_bundle_id,
-            display_name=display_name,
-            bundle_version=bundle_version,
-            remove_extensions=remove_extensions,
-            remove_uisd=remove_uisd,
-            enable_file_sharing=enable_file_sharing,
-            temp_folder=str(scratch),
-        )
+        # Installd can reject the signed app because its provisioning profile did
+        # not verify on the device (stale/corrupt profile). When that happens,
+        # retire the old profile and re-issue + re-sign + reinstall with a fresh
+        # one, automatically, up to MAX_PROFILE_REGENERATIONS times.
+        for attempt in range(MAX_PROFILE_REGENERATIONS + 1):
+            try:
+                signing.sign_ipa(
+                    ipa_path, output,
+                    p12_path=bundle["p12_path"],
+                    p12_password=bundle["p12_password"],
+                    profile_path=bundle["profile_path"],
+                    bundle_id=target_bundle_id,
+                    display_name=display_name,
+                    bundle_version=bundle_version,
+                    remove_extensions=remove_extensions,
+                    remove_uisd=remove_uisd,
+                    enable_file_sharing=enable_file_sharing,
+                    temp_folder=str(scratch),
+                )
 
-        progress("install", 0, f"Uploading to {target_name}\u2026")
-        apps.install(
-            output,
-            udid,
-            progress=lambda u: progress("install", *_install_relay(u, target_name)),
-        )
+                progress("install", 0, f"Uploading to {target_name}\u2026")
+                apps.install(
+                    output,
+                    udid,
+                    progress=lambda u: progress("install", *_install_relay(u, target_name)),
+                )
+                break
+            except Exception as exc:
+                if attempt >= MAX_PROFILE_REGENERATIONS or not apps.is_verification_failure(exc):
+                    raise
+                profile_regenerations += 1
+                progress(
+                    "install", None,
+                    "App integrity check failed \u2014 issuing a fresh provisioning "
+                    f"profile ({profile_regenerations}/{MAX_PROFILE_REGENERATIONS})\u2026",
+                )
+                bundle = provision.regenerate_profile(
+                    target_bundle_id,
+                    udid,
+                    app_name=app_name,
+                    on_step=lambda message: progress("provision", None, message),
+                )
     finally:
         # Scratch always goes, kept signed IPA or not: it is an unpacked copy of the
         # whole app, worth hundreds of MB, and nothing reads it after signing.
@@ -251,9 +280,12 @@ def run_sideload(
         "installed_at": datetime.datetime.now(datetime.timezone.utc).isoformat(),
         "expires_at": expires_at,
     }
+    if profile_regenerations:
+        result["profile_regenerations"] = profile_regenerations
     if record:
         registry.record({
-            **{key: value for key, value in result.items() if key != "signed_ipa"},
+            **{key: value for key, value in result.items()
+               if key not in ("signed_ipa", "profile_regenerations")},
             "options": {
                 "bundle_id": bundle_id,
                 "display_name": display_name,

@@ -316,6 +316,101 @@ def ensure_signing_assets(
     return bundle
 
 
+def regenerate_profile(
+    bundle_id: str,
+    udid: str,
+    app_name: str = "EmLoad App",
+    device_name: str = "EmLoad device",
+    on_step: Callable[[str], None] | None = None,
+) -> dict[str, Any]:
+    """Fetch a brand-new provisioning profile, retiring the old one.
+
+    Called when the device reports that an app's integrity could not be verified:
+    a stale or corrupted provisioning profile is the usual culprit, so instead of
+    re-installing the same bytes we delete the old profile (from the cache and, by
+    UUID, from the device) and download a fresh one - a new profile bound to the
+    same certificate, device, and App ID.
+
+    The certificate is deliberately kept: profiles are the problem here, and
+    re-issuing certificates is what trips Apple's certificate limits.
+    """
+    step = on_step or (lambda _m: None)
+    session = gsa.load_session()
+    signing_dir = paths.signing_dir(_account_slug(session.get("email")))
+
+    step("Retiring the old provisioning profile\u2026")
+    old_uuid: str | None = None
+    old_app_id: str | None = None
+    profile_path = signing_dir / _PROFILE
+    if profile_path.exists():
+        summary = profile_summary(profile_path.read_bytes())
+        old_uuid = summary.get("uuid") or None
+        old_app_id = summary.get("app_id")
+
+    # The bundle cache names the old profile; read its App ID as a fallback (the
+    # profile file may already be gone) and then drop it so nothing points at a
+    # profile that is about to be replaced.
+    bundle_cache = signing_dir / _BUNDLE_CACHE
+    if bundle_cache.exists():
+        try:
+            cached = json.loads(bundle_cache.read_text(encoding="utf-8"))
+        except ValueError:
+            cached = {}
+        old_app_id = old_app_id or cached.get("app_id_id")
+    if profile_path.exists():
+        profile_path.unlink(missing_ok=True)
+    bundle_cache.unlink(missing_ok=True)
+
+    step("Fetching a fresh provisioning profile\u2026")
+    fresh = ensure_signing_assets(
+        bundle_id,
+        udid,
+        app_name=app_name,
+        device_name=device_name,
+        on_step=step,
+    )
+
+    if old_uuid or old_app_id:
+        step("Removing the old profile from the device\u2026")
+        _remove_old_profile_best_effort(udid, old_uuid, old_app_id)
+    return fresh
+
+
+def _remove_old_profile_best_effort(
+    udid: str, old_uuid: str | None, old_app_id: str | None
+) -> None:
+    """Remove the retired profile from the device, never failing the caller.
+
+    iOS verifies an app against the profile embedded in it, but a stale copy left
+    in misagent can also get in the way - so it goes. The fresh profile travels
+    inside the re-signed app either way, so a locked or unreachable device only
+    means we skip the cleanup, not the fix.
+    """
+    if old_uuid:
+        try:
+            remove_profile(old_uuid, udid)
+            return
+        except Exception:  # noqa: BLE001 - best effort; the fresh profile supersedes it
+            return
+    if not old_app_id:
+        return
+    # No UUID known (cache was already gone) - retire any installed profile for
+    # the same app id so iOS cannot verify against a stale copy.
+    try:
+        stale = [
+            profile["uuid"]
+            for profile in list_profiles(udid)
+            if profile.get("uuid") and profile.get("app_id") == old_app_id
+        ]
+    except Exception:  # noqa: BLE001 - best effort
+        return
+    for uuid in stale:
+        try:
+            remove_profile(uuid, udid)
+        except Exception:  # noqa: BLE001 - keep going
+            pass
+
+
 def ensure_provisioned_for_device(
     udid: str,
     on_step: Callable[[str], None] | None = None,
