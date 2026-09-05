@@ -14,7 +14,7 @@ def test_parser_has_expected_commands():
         "doctor", "devices", "device-info", "login", "logout", "account",
         "teams", "provision", "inspect", "sideload", "refresh", "installs",
         "forget", "apps", "uninstall", "profiles", "unprovision", "signed",
-        "setup", "gui", "version",
+        "setup", "emstore-server", "gui", "version",
     ):
         assert expected in names
 

@@ -38,6 +38,17 @@ through `pymobiledevice3`.
   verification, EmLoad retires the old provisioning profile (from the cache and
   the device) and automatically issues, re-signs, and reinstalls with a fresh
   one — up to 2 re-issues per install
+- **EmStoreServer (AltServer alternative)**: watch usbmuxd and, the moment an
+  iPhone/iPad is plugged in, automatically sideload **EmStore** (the
+  AltStore/SideStore alternative, bundle id `com.SideStore.SideStore`) onto it
+  with your signed-in Apple ID — the same trick AltServer uses to bootstrap
+  AltStore. The IPA is taken from `~/EmStore` (the source checkout or its CI
+  `build/` folder), a previously downloaded copy, or the latest published
+  GitHub release (stable / alpha / nightly). Runs as `emload emstore-server
+  watch`, one-shot with `emload emstore-server install`, or from the GUI's
+  Devices page. `emload emstore-server serve` also exposes a small JSON HTTP
+  API (`/api/refresh`, `/api/install`, ...) so the phone itself can ask the PC
+  to sign and install — the actual "server" half of AltServer.
 - **Live install progress** in both CLI and GUI (upload MBs + installd phases)
 - **Miscellaneous tweaks (Nugget-based)**: SpringBoard options, daemon toggles
   and Liquid Glass settings applied with the sparserestore backup-restore
@@ -99,11 +110,34 @@ emload profiles              list provisioning profiles installed on the device
 emload unprovision <uuid>    remove one provisioning profile (--all removes every one)
 emload signed [--clean]      report / delete kept signed IPAs
 emload setup                 download zsign (needed for signing)
+emload emstore-server status  EmStoreServer state: sign-in, devices, IPA options
+emload emstore-server install  sideload EmStore onto connected device(s) now
+emload emstore-server watch    keep running; auto-install EmStore on device attach
+emload emstore-server serve    run the HTTP API the EmStore app talks to
 emload gui                   launch the desktop app
 ```
 
 Every command accepts `--json` for scripting. Device commands accept `--udid`
 and `--connection usb|wifi|auto`.
+
+> **EmStoreServer** options (status / install / watch / serve):
+> - `--ipa PATH` — use a specific EmStore `.ipa` (default: auto-detect, then download)
+> - `--download` / `--channel stable|alpha|nightly` — fetch the newest published
+>   EmStore build from `embabyty/EmStore` GitHub releases
+> - `--force` — reinstall even if EmStore is already on the device
+> - `--udid UDID` — act on one device instead of every connected device
+> - `serve` options: `--host ADDR` (default `127.0.0.1`), `--port PORT`
+>   (default `1740`; deliberately not AltServer's 12345, so both can coexist)
+> - re-sign options like `sideload`: `--display-name` (e.g. `EmStore`),
+>   `--bundle-id`, `--keep-extensions`, `--keep-uisd`, `--file-sharing`,
+>   `--keep-signed`, `--signed-dir`
+
+> **EmStoreServer API** (`emload emstore-server serve`): the EmStore app on the
+> phone talks to this HTTP server instead of AltServer — `GET /api/status`
+> (sign-in state + local IPA, never session tokens), `GET /api/devices`,
+> `GET /api/apps?udid=`, `POST /api/refresh` and `POST /api/install` (both
+> return `202` + `job_id`; poll `GET /api/jobs/<id>`), `GET /api/jobs`. There
+> is **no authentication** — keep it bound to localhost or a trusted LAN.
 
 > **On Windows, if `emload` isn't on your PATH**, use the repo's `emload.bat`
 > launcher instead (it always runs the project's `.venv`), e.g.
@@ -147,7 +181,9 @@ The desktop app has a sidebar with seven pages:
   installs a fresh profile on it automatically — reusing the same development
   certificate (certificates aren't device-specific, so re-issuing one per
   device would trip Apple's certificate limit; you can watch the profile
-  install in the status bar)
+  install in the status bar). A toggle here also enables **EmStoreServer**:
+  every newly connected device gets EmStore sideloaded onto it automatically
+  (if signed in), just like AltServer bootstraps AltStore.
 - **Sideload** — drag & drop an `.ipa`, see its icon/name/version, tweak
   options, pick the target device, and watch the install with a live progress
   bar and log

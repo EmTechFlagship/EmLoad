@@ -53,7 +53,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from .. import __version__, apps, device, doctor, gsa, ipa, paths, provision, registry, sideload, signing
+from .. import __version__, apps, device, doctor, gsa, ipa, paths, provision, registry, server, sideload, signing
 from ..nugget import respring_device
 from .dialogs import LoginDialog
 from .nugget_dialogs import DaemonsDialog, LiquidGlassDialog, SpringBoardDialog
@@ -147,6 +147,8 @@ class MainWindow(QMainWindow):
         self._login_dialog: LoginDialog | None = None
         self._login_email: str | None = None
         self._nugget_dialog: Any | None = None
+        # Serials an EmStoreServer install is already running for (no duplicates).
+        self._emstore_busy: set[str] = set()
 
         # Sidebar navigation + stacked pages (instead of a tab bar).
         # Colors come from the active palette (palette(...) roles), so the
@@ -299,12 +301,26 @@ class MainWindow(QMainWindow):
         self.devices_table.setSelectionBehavior(QTableWidget.SelectRows)
         layout.addWidget(self.devices_table)
 
+        emstore_box = QGroupBox("EmStoreServer")
+        emstore_layout = QVBoxLayout(emstore_box)
+        self.emstore_check = QCheckBox(
+            "Install EmStore automatically when an iPhone or iPad connects"
+        )
+        self.emstore_check.toggled.connect(self._emstore_toggled)
+        emstore_layout.addWidget(self.emstore_check)
+        self.emstore_status_label = QLabel("Idle")
+        self.emstore_status_label.setWordWrap(True)
+        emstore_layout.addWidget(self.emstore_status_label)
+        layout.addWidget(emstore_box)
+
         hint = QLabel(
             "Plug in your iPhone, unlock it, and tap \"Trust This Computer\" when "
             "prompted. Wi-Fi devices appear too when reachable."
         )
         hint.setWordWrap(True)
         layout.addWidget(hint)
+
+        self.emstore_check.setChecked(self._load_config().get("emstore_server", False))
         return page, "Devices"
 
     def refresh_devices(self) -> None:
@@ -335,6 +351,12 @@ class MainWindow(QMainWindow):
                 ),
             )
 
+        # EmStoreServer: when enabled, a freshly attached device gets EmStore
+        # sideloaded onto it (if signed in) - the AltServer behavior.
+        if getattr(self, "emstore_check", None) and self.emstore_check.isChecked():
+            for serial in sorted(current - previous):
+                self._schedule_emstore_install(serial)
+
     def _auto_provision_done(self, serial: str, result: dict[str, Any]) -> None:
         if result.get("status") != "reprovisioned":
             return
@@ -346,6 +368,69 @@ class MainWindow(QMainWindow):
         if warning:
             self.log(f"Auto-provision: {warning}")
         self.statusBar().showMessage(message, 8000)
+
+    # ------------------------------------------------------------------ #
+    # EmStoreServer (AltServer-style auto-install of EmStore)
+    # ------------------------------------------------------------------ #
+    def _load_config(self) -> dict[str, Any]:
+        try:
+            config = json.loads(paths.config_file().read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            config = {}
+        return config
+
+    def _save_config(self, config: dict[str, Any]) -> None:
+        paths.config_file().write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+    def _emstore_toggled(self, checked: bool) -> None:
+        config = self._load_config()
+        config["emstore_server"] = bool(checked)
+        self._save_config(config)
+        if checked:
+            self.emstore_status_label.setText(
+                "Watching - EmStore will be installed on each new device."
+            )
+            self.statusBar().showMessage("EmStoreServer: auto-install enabled", 5000)
+            # A phone that is already connected must not wait for a re-plug.
+            for serial in MainWindow.connected_udids(self.devices):
+                self._schedule_emstore_install(serial)
+        else:
+            self.emstore_status_label.setText("Idle")
+            self.statusBar().showMessage("EmStoreServer: auto-install disabled", 5000)
+
+    def _schedule_emstore_install(self, serial: str) -> None:
+        if serial in self._emstore_busy:
+            return
+        self._emstore_busy.add(serial)
+        self.emstore_status_label.setText(f"Installing EmStore on {serial}\u2026")
+        self.run_task(
+            server.ensure_installed,
+            serial,
+            on_done=lambda result, s=serial: self._emstore_install_done(s, result),
+            on_error=lambda _worker, msg, s=serial: self._emstore_install_failed(s, msg),
+        )
+
+    def _emstore_install_done(self, serial: str, result: dict[str, Any]) -> None:
+        self._emstore_busy.discard(serial)
+        status = result.get("status", "done").replace("_", " ")
+        version = result.get("version")
+        if status == "installed":
+            text = f"Installed EmStore on {serial}"
+        elif status == "already installed":
+            text = f"EmStore {version or ''} is already installed on {serial}".strip()
+        else:
+            text = f"EmStore {status} on {serial}"
+        self.emstore_status_label.setText(text)
+        self.statusBar().showMessage(f"EmStoreServer: {text}", 8000)
+
+    def _emstore_install_failed(self, serial: str, message: str) -> None:
+        self._emstore_busy.discard(serial)
+        self.emstore_status_label.setText(
+            f"Could not install EmStore on {serial}: {message}"
+        )
+        self.statusBar().showMessage(
+            f"EmStoreServer: {message} - it will retry when {serial} reconnects", 8000
+        )
 
     @staticmethod
     def _enrich_devices(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -1021,10 +1106,7 @@ class MainWindow(QMainWindow):
         return page, "Settings"
 
     def _load_settings(self) -> None:
-        try:
-            config = json.loads(paths.config_file().read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            config = {}
+        config = self._load_config()
         conn = config.get("connection", "auto")
         self.connection_combo.blockSignals(True)
         self.connection_combo.setCurrentIndex({"auto": 0, "usb": 1, "wifi": 2}.get(conn, 0))
@@ -1034,12 +1116,13 @@ class MainWindow(QMainWindow):
         self.refresh_zsign_status()
 
     def _save_settings(self) -> None:
-        config = {
+        config = self._load_config()
+        config.update({
             "connection": {0: "auto", 1: "usb", 2: "wifi"}[self.connection_combo.currentIndex()],
             "signed_dir": self.signed_dir_edit.text().strip(),
             "keep_signed": self.keep_signed_default.isChecked(),
-        }
-        paths.config_file().write_text(json.dumps(config, indent=2), encoding="utf-8")
+        })
+        self._save_config(config)
 
     def _connection_changed(self) -> None:
         import os

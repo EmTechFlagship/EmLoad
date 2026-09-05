@@ -22,6 +22,11 @@
     emload unprovision <uuid>    remove a provisioning profile from the device
     emload signed [--clean]      report / delete kept signed IPAs
     emload setup                 download zsign (needed for signing)
+    emload emstore-server status  show EmStoreServer state (sign-in, devices, IPA)
+    emload emstore-server install install EmStore on connected device(s) once
+    emload emstore-server watch   keep running; auto-install EmStore on attach
+    emload emstore-server serve   run the HTTP API (the EmStore app's AltServer
+                                  alternative) so the phone can trigger installs
     emload gui                   launch the desktop app
 
 Every command accepts ``--json`` for machine-readable output, and device
@@ -33,9 +38,10 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+import threading
 from typing import Any, Callable
 
-from . import __version__, anisette, apps, device, doctor, gsa, ipa, paths, provision, registry, sideload, signing
+from . import __version__, anisette, apps, device, doctor, gsa, ipa, paths, provision, registry, server, sideload, signing
 from .errors import EmLoadError
 
 
@@ -314,6 +320,146 @@ def cmd_gui(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- #
+# EmStoreServer (AltServer-style auto-installer for EmStore)
+# --------------------------------------------------------------------------- #
+def _emstore_install_options(args: argparse.Namespace) -> dict[str, Any]:
+    """The keyword arguments :func:`emload.server.ensure_installed` takes."""
+    return {
+        "ipa": args.ipa,
+        "download": args.download,
+        "channel": args.channel,
+        "force": args.force,
+        "display_name": args.display_name,
+        "bundle_id": args.bundle_id,
+        "remove_extensions": not args.keep_extensions,
+        "remove_uisd": not args.keep_uisd,
+        "enable_file_sharing": args.file_sharing,
+        "keep_signed": args.keep_signed,
+        "signed_dir": args.signed_dir,
+        "allow_other_platform": args.allow_other_platform,
+    }
+
+
+def cmd_emstore_status(args: argparse.Namespace) -> int:
+    """bundle id, account, local IPA options, and per-device install state."""
+    payload: dict[str, Any] = {
+        "bundle_id": server.EMSTORE_BUNDLE_ID,
+        "repo": server.EMSTORE_REPO,
+        "account": gsa.status(),
+        "ipa": [str(path) for path in server.local_candidates()],
+        "devices": [],
+    }
+    seen: set[str] = set()
+    for entry in device.list_devices():
+        serial = str(entry.get("serial") or "")
+        if not serial or serial in seen:
+            continue
+        seen.add(serial)
+        row: dict[str, Any] = {
+            "udid": serial,
+            "connection": entry.get("connection_type"),
+            "emstore_installed": False,
+            "emstore_version": None,
+        }
+        try:
+            present = apps.list_installed(serial).get(payload["bundle_id"])
+            row["emstore_installed"] = present is not None
+            if present:
+                row["emstore_version"] = present.get("version")
+        except Exception:  # noqa: BLE001 - unpaired/untrusted devices can't be read
+            row["emstore_installed"] = None
+        payload["devices"].append(row)
+    _emit(args, payload)
+    return 0
+
+
+def cmd_emstore_install(args: argparse.Namespace) -> int:
+    options = _emstore_install_options(args)
+    serials = (
+        [args.udid]
+        if args.udid
+        else server.distinct_serials(device.list_devices())
+    )
+    if not serials:
+        _emit(args, {
+            "status": "error",
+            "error": "No device connected; plug in an iPhone (or pass --udid).",
+        })
+        return 1
+
+    results, failed = [], 0
+    for serial in serials:
+        try:
+            result = server.ensure_installed(
+                serial, on_progress=_progress(args), **options
+            )
+            results.append(result)
+        except EmLoadError as exc:
+            failed += 1
+            results.append({"udid": serial, "status": "error", "error": str(exc)})
+    _emit(args, {"results": results, "failed": failed})
+    return 1 if failed else 0
+
+
+def cmd_emstore_watch(args: argparse.Namespace) -> int:
+    """Run until Ctrl+C, installing EmStore on every device as it attaches."""
+    stop = threading.Event()
+
+    def on_log(message: str) -> None:
+        if getattr(args, "json", False):
+            sys.stderr.write(json.dumps({"log": message}) + "\n")
+            sys.stderr.flush()
+        else:
+            print(message, file=sys.stderr)
+
+    def on_result(result: dict[str, Any]) -> None:
+        if getattr(args, "json", False):
+            print(json.dumps(result, ensure_ascii=False, default=str))
+            sys.stdout.flush()
+
+    if not getattr(args, "json", False):
+        print(
+            "EmStoreServer: waiting for an iPhone or iPad to connect "
+            "(Ctrl+C to stop)\u2026",
+            file=sys.stderr,
+        )
+    try:
+        server.watch_and_install(
+            stop,
+            on_log=on_log,
+            on_result=on_result,
+            filter_udid=args.udid,
+            initial=device.list_devices(),
+            **_emstore_install_options(args),
+        )
+    except KeyboardInterrupt:
+        stop.set()
+    return 0
+
+
+def cmd_emstore_serve(args: argparse.Namespace) -> int:
+    """Run the HTTP API (status/devices/apps/jobs) until Ctrl+C."""
+    def on_log(message: str) -> None:
+        if getattr(args, "json", False):
+            sys.stderr.write(json.dumps({"log": message}) + "\n")
+            sys.stderr.flush()
+        else:
+            print(message, file=sys.stderr)
+
+    server.run_server(host=args.host, port=args.port, log=on_log)
+    return 0
+
+
+def cmd_emstore_server(args: argparse.Namespace) -> int:
+    return {
+        "status": cmd_emstore_status,
+        "install": cmd_emstore_install,
+        "watch": cmd_emstore_watch,
+        "serve": cmd_emstore_serve,
+    }[args.action](args)
+
+
+# --------------------------------------------------------------------------- #
 # Argument parsing
 # --------------------------------------------------------------------------- #
 def build_parser() -> argparse.ArgumentParser:
@@ -431,6 +577,48 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser = sub.add_parser("setup", parents=[common], help="download zsign (required to sign)")
     setup_parser.add_argument("--force", action="store_true", help="re-download even if present")
 
+    emstore_parser = sub.add_parser(
+        "emstore-server", parents=[common],
+        help="AltServer-style EmStore auto-installer: status / install / watch / serve",
+    )
+    emstore_parser.add_argument(
+        "action", choices=["status", "install", "watch", "serve"],
+        help="status: report sign-in + devices + IPA state; "
+             "install: sideload EmStore onto connected device(s) once; "
+             "watch: keep running and auto-install EmStore when a device attaches; "
+             "serve: run the HTTP API the EmStore app talks to",
+    )
+    emstore_parser.add_argument("--host", default="127.0.0.1",
+                                help="serve: address to bind (default: 127.0.0.1)")
+    emstore_parser.add_argument("--port", type=int, default=server.DEFAULT_PORT,
+                                help=f"serve: port to bind (default: {server.DEFAULT_PORT})")
+    emstore_parser.add_argument("--ipa", default=None,
+                                help="path to the EmStore .ipa (default: auto-detect, then download)")
+    emstore_parser.add_argument("--download", action="store_true",
+                                help="always fetch the latest published EmStore build from GitHub")
+    emstore_parser.add_argument("--channel", default=None, choices=["stable", "alpha", "nightly"],
+                                help="GitHub release channel to download (default: latest release)")
+    emstore_parser.add_argument("--force", action="store_true",
+                                help="reinstall EmStore even if it is already on the device")
+    emstore_parser.add_argument("--udid", default=None,
+                                help="act on this device only (default: every connected device)")
+    emstore_parser.add_argument("-n", "--display-name", default=None,
+                                help="override the app's display name (e.g. EmStore)")
+    emstore_parser.add_argument("-b", "--bundle-id", default=None,
+                                help="override the bundle id (default: com.SideStore.SideStore)")
+    emstore_parser.add_argument("--keep-extensions", action="store_true",
+                                help="keep app extensions (uses extra App ID slots)")
+    emstore_parser.add_argument("--keep-uisd", action="store_true",
+                                help="keep UISupportedDevices device restrictions")
+    emstore_parser.add_argument("--file-sharing", action="store_true",
+                                help="enable Files-app sharing (UIFileSharingEnabled)")
+    emstore_parser.add_argument("--keep-signed", action="store_true",
+                                help="keep the signed .ipa on disk")
+    emstore_parser.add_argument("--signed-dir", default=None,
+                                help="folder for signed .ipa files and scratch")
+    emstore_parser.add_argument("--allow-other-platform", action="store_true",
+                                help="allow installing to a mismatched platform")
+
     sub.add_parser("gui", parents=[common], help="launch the desktop app")
 
     return parser
@@ -482,6 +670,7 @@ def dispatch(args: argparse.Namespace) -> int:
         "unprovision": cmd_unprovision,
         "signed": cmd_signed,
         "setup": cmd_setup,
+        "emstore-server": cmd_emstore_server,
         "gui": cmd_gui,
     }
     return commands[args.command](args)
