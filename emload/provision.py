@@ -644,6 +644,56 @@ def clear_profiles(udid: str | None = None) -> dict[str, Any]:
     return result
 
 
+def reset_app_id(udid: str | None = None) -> dict[str, Any]:
+    """Delete EmLoad's cached App ID and retire its provisioning profiles.
+
+    The signing certificate is deliberately retained so the next provision does
+    not consume another certificate slot on the Apple Developer account.
+    """
+    session = gsa.load_session()
+    signing_dir = paths.signing_dir(_account_slug(session.get("email")))
+    bundle_path = signing_dir / _BUNDLE_CACHE
+    profile_path = signing_dir / _PROFILE
+    if not bundle_path.exists():
+        raise gsa.GsaError("no cached App ID; run a sideload first")
+
+    bundle = json.loads(bundle_path.read_text(encoding="utf-8"))
+    team_id = bundle.get("team_id")
+    cached_app_id = bundle.get("app_id_id")
+    if not team_id or not cached_app_id:
+        raise gsa.GsaError("cached signing bundle has no App ID")
+
+    app_id = next(
+        (
+            entry
+            for entry in developer.list_app_ids(team_id)
+            if cached_app_id
+            in {
+                entry.get("appIdId"),
+                entry.get("appIdPlatform"),
+                entry.get("identifier"),
+            }
+        ),
+        None,
+    )
+    if app_id:
+        developer.delete_app_id(team_id, app_id.get("appIdId") or cached_app_id)
+
+    profiles: dict[str, Any]
+    try:
+        profiles = clear_profiles(udid)
+    except Exception as exc:  # noqa: BLE001 - remote App ID reset still completed
+        profiles = {"removed": 0, "total": 0, "failed": [str(exc)]}
+
+    profile_path.unlink(missing_ok=True)
+    bundle_path.unlink(missing_ok=True)
+    return {
+        "app_id": cached_app_id,
+        "udid": udid,
+        "profiles": profiles,
+    }
+
+
 def provision_device(
     bundle_id: str,
     udid: str | None = None,

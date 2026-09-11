@@ -563,6 +563,11 @@ class MainWindow(QMainWindow):
         target_row.addWidget(self.refresh_devices_button)
         layout.addLayout(target_row)
 
+        self.reset_app_id_button = QPushButton("Reset App ID & Profiles")
+        self.reset_app_id_button.setEnabled(False)
+        self.reset_app_id_button.clicked.connect(self.reset_app_id)
+        layout.addWidget(self.reset_app_id_button)
+
         self.sideload_button = QPushButton("Sideload to iPhone")
         self.sideload_button.setEnabled(False)
         self.sideload_button.clicked.connect(self.start_sideload)
@@ -633,12 +638,58 @@ class MainWindow(QMainWindow):
         if not udids:
             combo.addItem("No device connected", None)
             self.sideload_button.setEnabled(False)
+            self.reset_app_id_button.setEnabled(False)
             return
         for udid in udids:
             combo.addItem(f"{udid[:8]}\u2026  ({udid})", udid)
         if current in udids:
             combo.setCurrentIndex(combo.findData(current))
         self.sideload_button.setEnabled(bool(self._current_info))
+        self.reset_app_id_button.setEnabled(True)
+
+    def reset_app_id(self) -> None:
+        udid = self.target_combo.currentData()
+        if not udid:
+            QMessageBox.warning(self, "EmLoad", "Connect a device first.")
+            return
+        answer = QMessageBox.question(
+            self,
+            "Reset App ID and profiles?",
+            "This permanently deletes EmLoad's cached Apple App ID, removes its "
+            "provisioning profiles from the device, and clears the local profile. "
+            "The signing certificate is kept. Continue?",
+            QMessageBox.Yes | QMessageBox.No,
+            QMessageBox.No,
+        )
+        if answer != QMessageBox.Yes:
+            return
+
+        self.reset_app_id_button.setEnabled(False)
+        self.run_task(
+            provision.reset_app_id,
+            udid,
+            on_done=self._reset_app_id_done,
+            on_error=self._reset_app_id_failed,
+        )
+
+    def _reset_app_id_done(self, result: dict[str, Any]) -> None:
+        self.reset_app_id_button.setEnabled(True)
+        profiles = result.get("profiles") or {}
+        failures = profiles.get("failed") or []
+        self.log(f"Reset App ID {result.get('app_id')} and removed cached profile.")
+        if failures:
+            self.log("Some device profiles could not be removed: " + "; ".join(failures))
+            self.statusBar().showMessage("App ID reset; some device profiles remain", 8000)
+        else:
+            self.statusBar().showMessage("App ID and provisioning profiles reset", 8000)
+
+    def _reset_app_id_failed(self, worker, message: str) -> None:
+        if worker is not None:
+            self._prune_workers(worker)
+        self.reset_app_id_button.setEnabled(True)
+        self.log(f"App ID reset failed: {message}")
+        self.statusBar().showMessage("App ID reset failed", 8000)
+        QMessageBox.critical(self, "Reset failed", message)
 
     def start_sideload(self) -> None:
         if not self._current_info or not self._current_ipa:

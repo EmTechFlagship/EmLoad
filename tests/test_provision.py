@@ -185,6 +185,43 @@ def test_clear_profiles_reports_failures(monkeypatch):
     assert "B" in result["failed"][0]
 
 
+def test_reset_app_id_deletes_remote_id_and_local_cache(monkeypatch, tmp_path):
+    signing_dir = tmp_path / "signing"
+    signing_dir.mkdir()
+    (signing_dir / "bundle.json").write_text(
+        '{"team_id": "TEAM123", "app_id_id": "APP123"}', encoding="utf-8"
+    )
+    (signing_dir / "profile.mobileprovision").write_bytes(b"profile")
+    (signing_dir / "certificate.json").write_bytes(b"keep")
+
+    monkeypatch.setattr(provision.gsa, "load_session", lambda: {"email": "a@b.test"})
+    monkeypatch.setattr(provision.paths, "signing_dir", lambda _slug: signing_dir)
+    monkeypatch.setattr(
+        provision.developer,
+        "list_app_ids",
+        lambda team_id: [{"appIdId": "APP123", "identifier": "com.example.App"}],
+    )
+    deleted: list[tuple[str, str]] = []
+    monkeypatch.setattr(
+        provision.developer,
+        "delete_app_id",
+        lambda team_id, app_id_id: deleted.append((team_id, app_id_id)),
+    )
+    monkeypatch.setattr(
+        provision,
+        "clear_profiles",
+        lambda udid: {"removed": 1, "total": 1},
+    )
+
+    result = provision.reset_app_id("deadbeef")
+
+    assert deleted == [("TEAM123", "APP123")]
+    assert result["profiles"] == {"removed": 1, "total": 1}
+    assert not (signing_dir / "bundle.json").exists()
+    assert not (signing_dir / "profile.mobileprovision").exists()
+    assert (signing_dir / "certificate.json").read_bytes() == b"keep"
+
+
 # --------------------------------------------------------------------------- #
 # Auto-reprovision on device connect
 # --------------------------------------------------------------------------- #
