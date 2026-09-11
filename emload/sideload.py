@@ -46,6 +46,36 @@ _ZSIGN_HEADROOM = 34
 # burn Apple's profile downloads forever: 1 initial attempt + 2 regenerations.
 MAX_PROFILE_REGENERATIONS = 2
 
+# Errors that indicate the provisioning profile is stale/broken and a fresh one
+# should be generated.  Broadened beyond the original verification-only check to
+# also catch "could not provision", profile install failures, and similar issues
+# where the profile itself is the problem rather than the device or IPA.
+_PROVISIONING_ERROR_HINTS = (
+    "could not provision",
+    "could not be verified",
+    "couldn't be verified",
+    "failed to verify",
+    "verification failed",
+    "does not verify",
+    "integrity",
+    "applicationverificationfailed",
+    "profile",
+    "provision",
+    "signing",
+    "certificate",
+)
+
+
+def is_provisioning_error(exc: Exception) -> bool:
+    """True when ``exc`` is a provisioning or profile problem that a fresh profile may fix.
+
+    Broader than ``apps.is_verification_failure``: catches "could not provision",
+    profile install failures, stale certificate issues, and similar errors where
+    the signing assets (profile, certificate) are the likely culprit.
+    """
+    text = str(exc).lower()
+    return any(hint in text for hint in _PROVISIONING_ERROR_HINTS)
+
 
 class SideloadError(EmLoadError):
     """A sideload could not be completed (device, IPA, or option problem)."""
@@ -237,13 +267,15 @@ def run_sideload(
                 )
                 break
             except Exception as exc:
-                if attempt >= MAX_PROFILE_REGENERATIONS or not apps.is_verification_failure(exc):
+                if attempt >= MAX_PROFILE_REGENERATIONS or not (
+                    apps.is_verification_failure(exc) or is_provisioning_error(exc)
+                ):
                     raise
                 profile_regenerations += 1
                 progress(
                     "install", None,
-                    "App integrity check failed \u2014 issuing a fresh provisioning "
-                    f"profile ({profile_regenerations}/{MAX_PROFILE_REGENERATIONS})\u2026",
+                    "Provisioning issue detected \u2014 issuing a fresh "
+                    f"provisioning profile ({profile_regenerations}/{MAX_PROFILE_REGENERATIONS})\u2026",
                 )
                 bundle = provision.regenerate_profile(
                     target_bundle_id,

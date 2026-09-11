@@ -98,6 +98,11 @@ def _gs_request(params: dict[str, Any], headers: dict[str, str]) -> dict[str, An
         timeout=_TIMEOUT,
         verify=tls.ca_bundle(),
     )
+    if resp.status_code >= 500:
+        raise GsaError(
+            f"Apple's sign-in service is unavailable right now (HTTP {resp.status_code}). "
+            "Wait a few minutes and try again."
+        )
     resp.raise_for_status()
     return plistlib.loads(resp.content)["Response"]
 

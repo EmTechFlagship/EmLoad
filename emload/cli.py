@@ -22,10 +22,10 @@
     emload unprovision <uuid>    remove a provisioning profile from the device
     emload signed [--clean]      report / delete kept signed IPAs
     emload setup                 download zsign (needed for signing)
-    emload emstore-server status  show EmStoreServer state (sign-in, devices, IPA)
-    emload emstore-server install install EmStore on connected device(s) once
-    emload emstore-server watch   keep running; auto-install EmStore on attach
-    emload emstore-server serve   run the HTTP API (the EmStore app's AltServer
+    emload emside-store status   show EmSideStore state (sign-in, devices, IPA)
+    emload emside-store install  install SideStore on connected device(s) once
+    emload emside-store watch    keep running; auto-install SideStore on attach
+    emload emside-store serve    run the HTTP API (the SideStore app's AltServer
                                   alternative) so the phone can trigger installs
     emload gui                   launch the desktop app
 
@@ -320,7 +320,7 @@ def cmd_gui(args: argparse.Namespace) -> int:
 
 
 # --------------------------------------------------------------------------- #
-# EmStoreServer (AltServer-style auto-installer for EmStore)
+# EmSideStore (AltServer-style auto-installer for SideStore)
 # --------------------------------------------------------------------------- #
 def _emstore_install_options(args: argparse.Namespace) -> dict[str, Any]:
     """The keyword arguments :func:`emload.server.ensure_installed` takes."""
@@ -343,8 +343,8 @@ def _emstore_install_options(args: argparse.Namespace) -> dict[str, Any]:
 def cmd_emstore_status(args: argparse.Namespace) -> int:
     """bundle id, account, local IPA options, and per-device install state."""
     payload: dict[str, Any] = {
-        "bundle_id": server.EMSTORE_BUNDLE_ID,
-        "repo": server.EMSTORE_REPO,
+        "bundle_id": server.SIDESTORE_BUNDLE_ID,
+        "repo": server.SIDESTORE_REPO,
         "account": gsa.status(),
         "ipa": [str(path) for path in server.local_candidates()],
         "devices": [],
@@ -578,32 +578,33 @@ def build_parser() -> argparse.ArgumentParser:
     setup_parser.add_argument("--force", action="store_true", help="re-download even if present")
 
     emstore_parser = sub.add_parser(
-        "emstore-server", parents=[common],
-        help="AltServer-style EmStore auto-installer: status / install / watch / serve",
+        "emside-store", aliases=["emstore-server", "emside-store-server"],
+        parents=[common, transport],
+        help="AltServer-style SideStore auto-installer: status / install / watch / serve",
     )
     emstore_parser.add_argument(
         "action", choices=["status", "install", "watch", "serve"],
         help="status: report sign-in + devices + IPA state; "
-             "install: sideload EmStore onto connected device(s) once; "
-             "watch: keep running and auto-install EmStore when a device attaches; "
-             "serve: run the HTTP API the EmStore app talks to",
+             "install: sideload SideStore onto connected device(s) once; "
+             "watch: keep running and auto-install or refresh SideStore when a device attaches; "
+             "serve: run the HTTP API the SideStore app talks to",
     )
     emstore_parser.add_argument("--host", default="127.0.0.1",
                                 help="serve: address to bind (default: 127.0.0.1)")
     emstore_parser.add_argument("--port", type=int, default=server.DEFAULT_PORT,
                                 help=f"serve: port to bind (default: {server.DEFAULT_PORT})")
     emstore_parser.add_argument("--ipa", default=None,
-                                help="path to the EmStore .ipa (default: auto-detect, then download)")
+                                help="path to the SideStore .ipa (default: auto-detect, then download)")
     emstore_parser.add_argument("--download", action="store_true",
-                                help="always fetch the latest published EmStore build from GitHub")
+                                help="always fetch the latest published SideStore build from GitHub")
     emstore_parser.add_argument("--channel", default=None, choices=["stable", "alpha", "nightly"],
                                 help="GitHub release channel to download (default: latest release)")
     emstore_parser.add_argument("--force", action="store_true",
-                                help="reinstall EmStore even if it is already on the device")
+                                help="reinstall SideStore even if it is already on the device")
     emstore_parser.add_argument("--udid", default=None,
                                 help="act on this device only (default: every connected device)")
     emstore_parser.add_argument("-n", "--display-name", default=None,
-                                help="override the app's display name (e.g. EmStore)")
+                                help="override the app's display name (e.g. SideStore)")
     emstore_parser.add_argument("-b", "--bundle-id", default=None,
                                 help="override the bundle id (default: com.SideStore.SideStore)")
     emstore_parser.add_argument("--keep-extensions", action="store_true",
@@ -670,7 +671,9 @@ def dispatch(args: argparse.Namespace) -> int:
         "unprovision": cmd_unprovision,
         "signed": cmd_signed,
         "setup": cmd_setup,
+        "emside-store": cmd_emstore_server,
         "emstore-server": cmd_emstore_server,
+        "emside-store-server": cmd_emstore_server,
         "gui": cmd_gui,
     }
     return commands[args.command](args)

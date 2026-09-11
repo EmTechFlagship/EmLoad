@@ -147,7 +147,7 @@ class MainWindow(QMainWindow):
         self._login_dialog: LoginDialog | None = None
         self._login_email: str | None = None
         self._nugget_dialog: Any | None = None
-        # Serials an EmStoreServer install is already running for (no duplicates).
+        # Serials an EmSideStore install is already running for (no duplicates).
         self._emstore_busy: set[str] = set()
 
         # Sidebar navigation + stacked pages (instead of a tab bar).
@@ -301,10 +301,10 @@ class MainWindow(QMainWindow):
         self.devices_table.setSelectionBehavior(QTableWidget.SelectRows)
         layout.addWidget(self.devices_table)
 
-        emstore_box = QGroupBox("EmStoreServer")
+        emstore_box = QGroupBox("EmSideStore")
         emstore_layout = QVBoxLayout(emstore_box)
         self.emstore_check = QCheckBox(
-            "Install EmStore automatically when an iPhone or iPad connects"
+            "Install and refresh SideStore automatically when an iPhone or iPad connects"
         )
         self.emstore_check.toggled.connect(self._emstore_toggled)
         emstore_layout.addWidget(self.emstore_check)
@@ -351,7 +351,7 @@ class MainWindow(QMainWindow):
                 ),
             )
 
-        # EmStoreServer: when enabled, a freshly attached device gets EmStore
+        # EmSideStore: when enabled, a freshly attached device gets SideStore
         # sideloaded onto it (if signed in) - the AltServer behavior.
         if getattr(self, "emstore_check", None) and self.emstore_check.isChecked():
             for serial in sorted(current - previous):
@@ -388,21 +388,21 @@ class MainWindow(QMainWindow):
         self._save_config(config)
         if checked:
             self.emstore_status_label.setText(
-                "Watching - EmStore will be installed on each new device."
+                "Watching - SideStore will be installed or refreshed on each new device."
             )
-            self.statusBar().showMessage("EmStoreServer: auto-install enabled", 5000)
+            self.statusBar().showMessage("EmSideStore: auto-install enabled", 5000)
             # A phone that is already connected must not wait for a re-plug.
             for serial in MainWindow.connected_udids(self.devices):
                 self._schedule_emstore_install(serial)
         else:
             self.emstore_status_label.setText("Idle")
-            self.statusBar().showMessage("EmStoreServer: auto-install disabled", 5000)
+            self.statusBar().showMessage("EmSideStore: auto-install disabled", 5000)
 
     def _schedule_emstore_install(self, serial: str) -> None:
         if serial in self._emstore_busy:
             return
         self._emstore_busy.add(serial)
-        self.emstore_status_label.setText(f"Installing EmStore on {serial}\u2026")
+        self.emstore_status_label.setText(f"Installing or refreshing SideStore on {serial}\u2026")
         self.run_task(
             server.ensure_installed,
             serial,
@@ -414,22 +414,43 @@ class MainWindow(QMainWindow):
         self._emstore_busy.discard(serial)
         status = result.get("status", "done").replace("_", " ")
         version = result.get("version")
+        if status == "already installed":
+            self._emstore_busy.add(serial)
+            self.emstore_status_label.setText(f"Refreshing SideStore on {serial}\u2026")
+            self.run_task(
+                server.refresh_sidestore_if_due,
+                serial,
+                on_done=lambda refreshed, s=serial: self._emstore_refresh_done(
+                    s, refreshed, version
+                ),
+                on_error=lambda _worker, msg, s=serial: self._emstore_install_failed(s, msg),
+            )
+            return
         if status == "installed":
-            text = f"Installed EmStore on {serial}"
-        elif status == "already installed":
-            text = f"EmStore {version or ''} is already installed on {serial}".strip()
+            text = f"Installed SideStore on {serial}"
         else:
-            text = f"EmStore {status} on {serial}"
+            text = f"SideStore {status} on {serial}"
         self.emstore_status_label.setText(text)
-        self.statusBar().showMessage(f"EmStoreServer: {text}", 8000)
+        self.statusBar().showMessage(f"EmSideStore: {text}", 8000)
+
+    def _emstore_refresh_done(
+        self, serial: str, result: dict[str, Any] | None, version: str | None
+    ) -> None:
+        self._emstore_busy.discard(serial)
+        if result is None:
+            text = f"SideStore {version or ''} is already installed on {serial}".strip()
+        else:
+            text = f"Refreshed SideStore on {serial}"
+        self.emstore_status_label.setText(text)
+        self.statusBar().showMessage(f"EmSideStore: {text}", 8000)
 
     def _emstore_install_failed(self, serial: str, message: str) -> None:
         self._emstore_busy.discard(serial)
         self.emstore_status_label.setText(
-            f"Could not install EmStore on {serial}: {message}"
+            f"Could not install or refresh SideStore on {serial}: {message}"
         )
         self.statusBar().showMessage(
-            f"EmStoreServer: {message} - it will retry when {serial} reconnects", 8000
+            f"EmSideStore: {message} - it will retry when {serial} reconnects", 8000
         )
 
     @staticmethod

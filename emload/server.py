@@ -1,16 +1,16 @@
-"""EmLoad server - the EmStore app's AltServer alternative.
+"""EmLoad server - the SideStore app's AltServer alternative.
 
-This is the EmStoreServer: EmLoad's own server for installing the upcoming
-AltStore/SideStore alternative, **EmStore**. It ships two things:
+This is EmSideStore: EmLoad's own server for installing **SideStore**. It ships
+two things:
 
-1. **EmStore.ipa auto-download + auto-install**: resolve the EmStore IPA
+1. **SideStore.ipa auto-download + auto-install**: resolve the SideStore IPA
    (an explicit ``--ipa`` path, a locally-built copy, or the latest published
    GitHub release - stable / alpha / nightly, downloaded into EmLoad's data
    dir), sideload it onto every iPhone/iPad as it attaches, and keep watching
-   usbmuxd. This is what ``emload emstore-server install/watch`` and the GUI's
-   EmStoreServer toggle run.
+    usbmuxd. This is what ``emload emside-store install/watch`` and the GUI's
+   EmSideStore toggle run.
 
-2. **HTTP API** (JSON in/out) so the EmStore app on an iPhone/iPad can ask the
+2. **HTTP API** (JSON in/out) so the SideStore app on an iPhone/iPad can ask the
    PC to do the things the phone cannot (signing with an Apple ID, provisioning,
    installing IPAs):
 
@@ -20,7 +20,7 @@ AltStore/SideStore alternative, **EmStore**. It ships two things:
     POST /api/refresh      re-sign + reinstall recorded apps before profiles expire
                            body: {"udid": ..., "bundle_ids": [...], "all": bool,
                                   "within_days": 2.0}
-    POST /api/install      sideload the EmStore app itself (like AltServer does)
+    POST /api/install      sideload the SideStore app itself (like AltServer does)
                            body: {"udid": ..., "force": bool}
     GET  /api/jobs         jobs, newest first
     GET  /api/jobs/<id>    one job, including its log and results
@@ -53,7 +53,7 @@ from . import __version__, apps, device, gsa, paths, registry, sideload, tls
 from .errors import EmLoadError
 
 #: Human-readable service name (shown in /api/status + the HTTP Server header).
-SERVICE_NAME = "EmStoreServer"
+SERVICE_NAME = "EmSideStore"
 
 #: Default HTTP port. Deliberately not AltServer's 12345, so both can coexist.
 DEFAULT_PORT = 1740
@@ -64,45 +64,59 @@ _JOB_LIMIT = 100
 
 
 # --------------------------------------------------------------------------- #
-# EmStore IPA auto-download & auto-install (the server's default job)
+# SideStore IPA auto-download & auto-install (the server's default job)
 # --------------------------------------------------------------------------- #
-#: Bundle identifier of the EmStore app (see EmStore's ``Build.xcconfig``).
-EMSTORE_BUNDLE_ID = "com.SideStore.SideStore"
+#: Bundle identifier of the SideStore app (see SideStore's ``Build.xcconfig``).
+SIDESTORE_BUNDLE_ID = "com.SideStore.SideStore"
 
-#: GitHub repository that publishes EmStore builds as releases.
-EMSTORE_REPO = "embabyty/EmStore"
+#: GitHub repository that publishes SideStore builds as releases.
+SIDESTORE_REPO = "embabyty/EmStore"
 
 #: Name the downloaded IPA is cached under in EmLoad's data dir.
-EMSTORE_IPA_NAME = "EmStore.ipa"
+SIDESTORE_IPA_NAME = "SideStore.ipa"
+
+# Deprecated aliases for callers using the old EmStore names.
+EMSTORE_BUNDLE_ID = SIDESTORE_BUNDLE_ID
+EMSTORE_REPO = SIDESTORE_REPO
+EMSTORE_IPA_NAME = SIDESTORE_IPA_NAME
 
 _GH_API = "https://api.github.com/repos/{repo}/releases?per_page=30"
 _GH_TIMEOUT = 30
 
 
-class EmStoreServerError(EmLoadError):
-    """The server could not find, fetch, or install the EmStore app."""
+class EmSideStoreError(EmLoadError):
+    """The server could not find, fetch, or install the SideStore app."""
 
 
-def emstore_dir() -> Path:
-    """EmLoad's folder for the downloaded EmStore IPA (created if missing)."""
-    path = paths.data_dir() / "emstore"
+EmStoreServerError = EmSideStoreError
+
+
+def sidestore_dir() -> Path:
+    """EmLoad's folder for the downloaded SideStore IPA (created if missing)."""
+    path = paths.data_dir() / "sidestore"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
 
-def local_candidates() -> list[Path]:
-    """A built EmStore IPA found on this machine, newest first.
+emstore_dir = sidestore_dir
 
-    Looks beside the EmStore source checkout (where a local ``xcodebuild`` or
-    the repo's CI both drop ``SideStore.ipa``) and in EmLoad's own data dir.
+
+def local_candidates() -> list[Path]:
+    """A built SideStore IPA found on this machine, newest first.
+
+    Looks beside the SideStore source checkout, in the user's Downloads release
+    folder, and in EmLoad's own data dir.
     """
     home = Path.home()
     candidates = [
-        home / "EmStore" / "SideStore.ipa",
-        home / "EmStore" / "build" / "SideStore.ipa",
-        home / "EmStore" / "EmStore.ipa",
-        emstore_dir() / EMSTORE_IPA_NAME,
+        home / "SideStore" / "SideStore.ipa",
+        home / "SideStore" / "build" / "SideStore.ipa",
+        home / "Downloads" / "SideStore.ipa",
+        sidestore_dir() / SIDESTORE_IPA_NAME,
     ]
+    downloads = home / "Downloads"
+    if downloads.is_dir():
+        candidates.extend(downloads.glob("SideStore-*.ipa/SideStore.ipa"))
     found = [path for path in candidates if path.is_file()]
     found.sort(key=lambda path: path.stat().st_mtime, reverse=True)
     return found
@@ -116,7 +130,7 @@ def _select_release_asset(
     Drafts are never considered. ``channel`` narrows by matching the release
     tag/name (``stable``, ``alpha``, ``nightly``); without it, the newest
     non-prerelease release is preferred, falling back to prereleases (nightly
-    and alpha builds are marked prerelease by the EmStore CI). Returns
+    and alpha builds are marked prerelease by the SideStore CI). Returns
     ``None`` when nothing has an ``.ipa`` asset.
     """
     usable = [r for r in releases if not r.get("draft")]
@@ -149,11 +163,11 @@ def _ipa_asset(release: dict[str, Any]) -> dict[str, Any] | None:
 
 
 def download_release_ipa(
-    repo: str = EMSTORE_REPO,
+    repo: str = SIDESTORE_REPO,
     channel: str | None = None,
     dest: Path | None = None,
 ) -> Path:
-    """Download the latest channel IPA from EmStore's GitHub releases.
+    """Download the latest channel IPA from SideStore's GitHub releases.
 
     The file is streamed to a temp file and renamed into place only after its
     ZIP magic header is verified, so a truncated download is never mistaken for
@@ -161,7 +175,7 @@ def download_release_ipa(
     """
     headers = {
         "Accept": "application/vnd.github+json",
-        "User-Agent": "EmLoad/EmStoreServer",
+        "User-Agent": "EmLoad/EmSideStore",
     }
     try:
         response = requests.get(
@@ -172,14 +186,14 @@ def download_release_ipa(
         releases = response.json()
     except requests.RequestException as exc:
         raise EmStoreServerError(
-            f"Could not fetch EmStore releases from GitHub: {exc}"
+            f"Could not fetch SideStore releases from GitHub: {exc}"
         ) from exc
 
     picked = _select_release_asset(releases, channel)
     if picked is None:
         label = f" for channel '{channel}'" if channel else ""
         raise EmStoreServerError(
-            f"No EmStore build{label} has been published to GitHub yet "
+            f"No SideStore build{label} has been published to GitHub yet "
             f"({repo}). Build the IPA locally and pass --ipa, or wait for a release."
         )
     release, asset = picked
@@ -191,7 +205,7 @@ def download_release_ipa(
         raw = download.content
     except requests.RequestException as exc:
         raise EmStoreServerError(
-            f"Could not download EmStore IPA from GitHub: {exc}"
+            f"Could not download SideStore IPA from GitHub: {exc}"
         ) from exc
 
     if not raw.startswith(b"PK\x03\x04"):
@@ -200,7 +214,7 @@ def download_release_ipa(
             "the release may be misconfigured."
         )
 
-    target = dest or emstore_dir() / EMSTORE_IPA_NAME
+    target = dest or sidestore_dir() / SIDESTORE_IPA_NAME
     tmp = target.with_name(target.name + ".part")
     tmp.write_bytes(raw)
     tmp.replace(target)
@@ -213,7 +227,7 @@ def resolve_ipa(
     download: bool = False,
     channel: str | None = None,
 ) -> tuple[Path, str]:
-    """The EmStore IPA to sideload, as ``(path, source label)``.
+    """The SideStore IPA to sideload, as ``(path, source label)``.
 
     ``download=True`` always fetches the newest published build (overwriting
     the cache). Otherwise an explicit path wins, then local candidates, then a
@@ -222,7 +236,9 @@ def resolve_ipa(
     if explicit:
         path = Path(explicit).expanduser()
         if not path.is_file():
-            raise EmStoreServerError(f"No EmStore IPA at '{path}'.")
+            raise EmStoreServerError(
+                f"No SideStore IPA at '{path}' (No EmStore IPA compatibility path found)."
+            )
         return path.resolve(), "explicit"
 
     if download:
@@ -252,7 +268,7 @@ def ensure_installed(
     allow_other_platform: bool = False,
     on_progress: sideload.ProgressFn | None = None,
 ) -> dict[str, Any]:
-    """Make sure EmStore is sideloaded on ``udid``.
+    """Make sure SideStore is sideloaded on ``udid``.
 
     Returns either ``{"status": "already_installed", ...}`` when the app is
     already there and ``force`` is false, or the ``sideload.run_sideload``
@@ -266,7 +282,7 @@ def ensure_installed(
         )
 
     ipa_path, source = resolve_ipa(ipa, download=download, channel=channel)
-    target_bundle = bundle_id or EMSTORE_BUNDLE_ID
+    target_bundle = bundle_id or SIDESTORE_BUNDLE_ID
 
     installed = apps.list_installed(udid)
     present = installed.get(target_bundle)
@@ -282,7 +298,7 @@ def ensure_installed(
     result = sideload.run_sideload(
         str(ipa_path),
         udid,
-        bundle_id=bundle_id or EMSTORE_BUNDLE_ID,
+        bundle_id=bundle_id or SIDESTORE_BUNDLE_ID,
         display_name=display_name,
         remove_extensions=remove_extensions,
         remove_uisd=remove_uisd,
@@ -295,6 +311,28 @@ def ensure_installed(
     result["status"] = "installed"
     result["ipa_source"] = source
     return result
+
+
+def refresh_sidestore_if_due(
+    udid: str,
+    *,
+    within_days: float = 2.0,
+    on_progress: sideload.ProgressFn | None = None,
+) -> dict[str, Any] | None:
+    """Refresh the recorded SideStore install when its profile is close to expiry."""
+    record = next(
+        (
+            entry for entry in registry.records()
+            if entry.get("bundle_id") == SIDESTORE_BUNDLE_ID
+            and entry.get("udid") == udid
+        ),
+        None,
+    )
+    if record is None or record.get("days_left") is None:
+        return None
+    if record["days_left"] > within_days:
+        return None
+    return sideload.refresh_record(record, on_progress=on_progress)
 
 
 def distinct_serials(entries: list[dict[str, Any]]) -> list[str]:
@@ -325,7 +363,7 @@ def watch_and_install(
     initial: list[dict[str, Any]] | None = None,
     **install_kwargs: Any,
 ) -> None:
-    """Run until ``stop`` is set: install EmStore on every device as it attaches.
+    """Run until ``stop`` is set: install or refresh SideStore on each attachment.
 
     ``initial`` is a current usbmux listing (from ``device.list_devices()``)
     processed before the listener starts, so phones that were already connected
@@ -347,6 +385,11 @@ def watch_and_install(
 
             result = ensure_installed(serial, on_progress=relay, **install_kwargs)
             log(f"[{serial}] {result['status'].replace('_', ' ')}.")
+            if result.get("status") == "already_installed":
+                refreshed = refresh_sidestore_if_due(serial, on_progress=relay)
+                if refreshed is not None:
+                    result = {**refreshed, "status": "refreshed"}
+                    log(f"[{serial}] SideStore refreshed.")
             if on_result:
                 on_result(result)
         except EmLoadError as exc:
@@ -555,7 +598,7 @@ def _run_install(
     params: dict[str, Any],
     log: Callable[[str], None],
 ) -> None:
-    """Sideload the EmStore app itself onto one device (like AltServer bootstraps AltStore)."""
+    """Sideload the SideStore app itself onto one device (like AltServer bootstraps AltStore)."""
     udid = params.get("udid") or device.resolve_serial()
     result = ensure_installed(
         udid,
@@ -638,8 +681,8 @@ class JobWorker:
 # --------------------------------------------------------------------------- #
 # HTTP server + handlers
 # --------------------------------------------------------------------------- #
-class EmStoreHTTPServer(ThreadingHTTPServer):
-    """Threaded HTTP server that carries EmStoreServer state to the handlers."""
+class EmSideStoreHTTPServer(ThreadingHTTPServer):
+    """Threaded HTTP server that carries EmSideStore state to the handlers."""
 
     daemon_threads = True
     allow_reuse_address = True
@@ -655,12 +698,14 @@ class EmStoreHTTPServer(ThreadingHTTPServer):
         self.worker = worker
         self.log = log
         super().__init__(address, ApiHandler)
+# Deprecated alias for integrations importing the old server class.
+EmStoreHTTPServer = EmSideStoreHTTPServer
 
 
 class ApiHandler(BaseHTTPRequestHandler):
     """JSON API: status/devices/apps/jobs (GET) and refresh/install (POST)."""
 
-    server_version = f"EmStoreServer/{__version__}"
+    server_version = f"EmSideStore/{__version__}"
     sys_version = ""  # don't leak the Python version
 
     def log_message(self, format: str, *args: Any) -> None:
@@ -749,8 +794,8 @@ class ApiHandler(BaseHTTPRequestHandler):
         self._send(200, {
             "service": SERVICE_NAME,
             "version": __version__,
-            "bundle_id": EMSTORE_BUNDLE_ID,
-            "repo": EMSTORE_REPO,
+            "bundle_id": SIDESTORE_BUNDLE_ID,
+            "repo": SIDESTORE_REPO,
             "account": state,
             "ipa": [str(path) for path in local_candidates()],
             "jobs": [
@@ -880,12 +925,12 @@ def create_server(
     jobs: JobStore | None = None,
     worker: JobWorker | None = None,
     log: Callable[[str], None] | None = None,
-) -> EmStoreHTTPServer:
-    """A ready-to-serve EmStoreHTTPServer (won't listen yet)."""
+) -> EmSideStoreHTTPServer:
+    """A ready-to-serve EmSideStoreHTTPServer (won't listen yet)."""
     store = jobs or JobStore()
     w = worker or JobWorker(store, log=log)
     w.start()
-    return EmStoreHTTPServer((host, port), store, w, log=log)
+    return EmSideStoreHTTPServer((host, port), store, w, log=log)
 
 
 def run_server(
@@ -903,7 +948,7 @@ def run_server(
     )
     say(
         f"{SERVICE_NAME} listening on http://{host}:{actual_port} - the "
-        "EmStore app's AltServer alternative.\n"
+        "SideStore app's AltServer alternative.\n"
         "No authentication: keep it on a trusted network, or bind to 127.0.0.1.\n"
         "Press Ctrl+C to stop."
     )
