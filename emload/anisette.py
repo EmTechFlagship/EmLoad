@@ -48,13 +48,12 @@ _ARCHIVE_MAGIC = (b"PK", b"\x1f\x8b", b"BZh", b"\xfd7zXZ")
 #: Apple-style locale tags look like ``zh_CN`` / ``en_US``.
 _APPLE_LOCALE = re.compile(r"^[A-Za-z]{2,3}([_-][A-Za-z0-9]+)+$")
 
-#: Since early September 2026 Apple's GSA edge rejects any request whose
-#: ``X-MMe-Client-Info`` names ``com.apple.dt.Xcode`` - it answers with an HTML
-#: 503 before authentication even runs (AltStore, iloader & co. hit the same
-#: wall). The Anisette package still reports itself as Xcode, so we re-identify
-#: as ``akd``, the daemon that actually performs this request on macOS.
-_XCODE_CLIENT_INFO = re.compile(r"com\.apple\.dt\.Xcode(?:/[^\s)>]*)?")
-_AKD_CLIENT_INFO = "com.apple.akd/1.0"
+# The Anisette package uses Android's provisioning libraries, so its generated
+# client info must not claim to be a Mac. Apple rejects that mismatch (-80045).
+_WINDOWS_CLIENT_INFO = (
+    "<PC> <Windows;6.2(0,0);9200> "
+    "<com.apple.AuthKit/1 (com.apple.akd/1.0)>"
+)
 
 
 def _download_libs() -> io.BytesIO:
@@ -223,11 +222,7 @@ def _wire_safe_headers(raw: dict[str, Any]) -> dict[str, Any]:
     headers["X-Apple-Locale"] = ascii_locale(
         existing_locale if isinstance(existing_locale, str) else None
     )
-    existing_client = headers.get("X-MMe-Client-Info")
-    if isinstance(existing_client, str):
-        headers["X-MMe-Client-Info"] = _XCODE_CLIENT_INFO.sub(
-            _AKD_CLIENT_INFO, existing_client
-        )
+    headers["X-MMe-Client-Info"] = _WINDOWS_CLIENT_INFO
     return headers
 
 

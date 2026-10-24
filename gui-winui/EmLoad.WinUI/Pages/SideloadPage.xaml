@@ -1,0 +1,184 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="EmLoad.WinUI.Pages.SideloadPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    NavigationCacheMode="Required">
+
+    <Grid Padding="28,16,28,16">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <StackPanel
+            Grid.Row="0"
+            Spacing="2"
+            MaxWidth="1000"
+            HorizontalAlignment="Left"
+            Margin="0,0,0,12">
+            <TextBlock Style="{StaticResource PageTitle}" Text="Sideload an app" />
+            <TextBlock
+                Style="{StaticResource PageSubtitle}"
+                Margin="0"
+                Text="Pick an .ipa, choose options, and install it with your own Apple ID. Signatures last 7 days; refresh them from the Library." />
+        </StackPanel>
+
+        <ScrollViewer Grid.Row="1">
+            <Grid ColumnSpacing="16" MaxWidth="1100" HorizontalAlignment="Stretch">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="3*" />
+                    <ColumnDefinition Width="2*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Left: what to install -->
+                <StackPanel Grid.Column="0" Spacing="12">
+
+                    <Border
+                        x:Name="DropZone"
+                        Padding="12"
+                        CornerRadius="8"
+                        AllowDrop="True"
+                        BorderThickness="2"
+                        BorderBrush="{ThemeResource ControlStrokeColorDefaultBrush}"
+                        Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        DragOver="DropZone_DragOver"
+                        Drop="DropZone_Drop">
+                        <StackPanel Spacing="4" HorizontalAlignment="Center">
+                            <FontIcon
+                                FontSize="26"
+                                HorizontalAlignment="Center"
+                                Glyph="&#xE896;" />
+                            <TextBlock
+                                x:Name="DropZoneText"
+                                HorizontalAlignment="Center"
+                                FontSize="14"
+                                Text="Drag &amp; drop an .ipa here, or browse" />
+                            <Button
+                                HorizontalAlignment="Center"
+                                Content="Browse…"
+                                Click="Browse_Click" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Style="{StaticResource CardBorder}">
+                        <Grid ColumnSpacing="12">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+
+                            <Border
+                                Width="56"
+                                Height="56"
+                                CornerRadius="12"
+                                Background="{ThemeResource ControlFillColorSecondaryBrush}">
+                                <Image x:Name="AppIcon" Stretch="UniformToFill" />
+                            </Border>
+
+                            <TextBlock
+                                x:Name="AppInfoText"
+                                Grid.Column="1"
+                                VerticalAlignment="Center"
+                                TextWrapping="Wrap"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="No app selected yet." />
+                        </Grid>
+                    </Border>
+
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Options" FontWeight="SemiBold" />
+
+                            <Grid ColumnSpacing="10" RowSpacing="6">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" VerticalAlignment="Center" Text="Display name" />
+                                <TextBox x:Name="DisplayNameBox" Grid.Row="0" Grid.Column="1" />
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" VerticalAlignment="Center" Text="Bundle ID" />
+                                <TextBox
+                                    x:Name="BundleIdBox"
+                                    Grid.Row="1"
+                                    Grid.Column="1"
+                                    PlaceholderText="blank = team-scoped" />
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" VerticalAlignment="Center" Text="Version" />
+                                <TextBox x:Name="VersionBox" Grid.Row="2" Grid.Column="1" />
+                            </Grid>
+
+                            <CheckBox x:Name="StripExtensionsCheck" Content="Remove app extensions (free accounts can't sign them)" IsChecked="True" />
+                            <CheckBox x:Name="StripUisdCheck" Content="Remove device restrictions (UISupportedDevices)" IsChecked="True" />
+                            <CheckBox x:Name="FileSharingCheck" Content="Enable Files-app sharing" />
+                            <CheckBox x:Name="KeepSignedCheck" Content="Keep the signed .ipa on disk" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+
+                <!-- Right: install + activity -->
+                <StackPanel Grid.Column="1" Spacing="12">
+                    <Border Style="{StaticResource CardBorder}">
+                        <StackPanel Spacing="8">
+                            <TextBlock Text="Destination" FontWeight="SemiBold" />
+
+                            <ComboBox
+                                x:Name="TargetCombo"
+                                HorizontalAlignment="Stretch" />
+
+                            <Button
+                                Content="Refresh devices"
+                                HorizontalAlignment="Stretch"
+                                Click="RefreshDevices_Click" />
+
+                            <Button
+                                x:Name="SideloadButton"
+                                Style="{StaticResource AccentButtonStyle}"
+                                Content="Sideload to iPhone"
+                                HorizontalAlignment="Stretch"
+                                IsEnabled="False"
+                                Click="Sideload_Click" />
+
+                            <Button
+                                x:Name="ResetAppIdButton"
+                                Content="Reset App ID &amp; Profiles"
+                                HorizontalAlignment="Stretch"
+                                IsEnabled="False"
+                                Click="ResetAppId_Click" />
+
+                            <ProgressBar
+                                x:Name="Progress"
+                                Minimum="0"
+                                Maximum="100"
+                                Value="0"
+                                Margin="0,4,0,0" />
+
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <ProgressRing x:Name="SideloadBusy" Width="18" Height="18" IsActive="False" />
+                                <TextBlock
+                                    x:Name="PhaseText"
+                                    VerticalAlignment="Center"
+                                    TextTrimming="CharacterEllipsis"
+                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                    Text="" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <TextBlock Text="Activity" FontWeight="SemiBold" />
+                    <TextBox
+                        x:Name="LogView"
+                        Style="{StaticResource MonoLog}"
+                        Height="240" />
+                </StackPanel>
+            </Grid>
+        </ScrollViewer>
+    </Grid>
+</Page>

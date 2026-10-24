@@ -1,0 +1,24 @@
+{
+  "version": 2,
+  "dgSpecHash": "FPqSgGOxAuM=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\Emiry\\EmLoadServer\\gui-winui\\EmLoad.WinUI\\EmLoad.WinUI.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.web.webview2\\1.0.3179.45\\microsoft.web.webview2.1.0.3179.45.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windows.sdk.buildtools\\10.0.26100.4654\\microsoft.windows.sdk.buildtools.10.0.26100.4654.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windows.sdk.buildtools.msix\\1.7.20250829.1\\microsoft.windows.sdk.buildtools.msix.1.7.20250829.1.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk\\1.8.260921001\\microsoft.windowsappsdk.1.8.260921001.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk.ai\\1.8.79\\microsoft.windowsappsdk.ai.1.8.79.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk.base\\1.8.251216001\\microsoft.windowsappsdk.base.1.8.251216001.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk.dwrite\\1.8.25122902\\microsoft.windowsappsdk.dwrite.1.8.25122902.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk.foundation\\1.8.260803002\\microsoft.windowsappsdk.foundation.1.8.260803002.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk.interactiveexperiences\\1.8.260708001\\microsoft.windowsappsdk.interactiveexperiences.1.8.260708001.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk.ml\\1.8.2223\\microsoft.windowsappsdk.ml.1.8.2223.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk.runtime\\1.8.260921001\\microsoft.windowsappsdk.runtime.1.8.260921001.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk.widgets\\1.8.251231004\\microsoft.windowsappsdk.widgets.1.8.251231004.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk.winui\\1.8.260803003\\microsoft.windowsappsdk.winui.1.8.260803003.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\system.numerics.tensors\\9.0.0\\system.numerics.tensors.9.0.0.nupkg.sha512",
+    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windows.sdk.net.ref\\10.0.19041.57\\microsoft.windows.sdk.net.ref.10.0.19041.57.nupkg.sha512"
+  ],
+  "logs": []
+}

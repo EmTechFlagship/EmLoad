@@ -1,0 +1,72 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="EmLoad.WinUI.Pages.AccountPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    NavigationCacheMode="Required">
+
+    <ScrollViewer>
+        <StackPanel Padding="28,20,28,28" Spacing="16" MaxWidth="900" HorizontalAlignment="Left">
+
+            <StackPanel Spacing="2">
+                <TextBlock Style="{StaticResource PageTitle}" Text="Apple ID" />
+                <TextBlock
+                    Style="{StaticResource PageSubtitle}"
+                    Text="A free Apple ID signs apps for 7 days at a time. EmLoad keeps only short-lived session tokens in your user profile." />
+            </StackPanel>
+
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel Spacing="12">
+                    <StackPanel Orientation="Horizontal" Spacing="10">
+                        <FontIcon
+                            x:Name="AccountIcon"
+                            FontSize="26"
+                            VerticalAlignment="Top"
+                            Glyph="&#xE77B;" />
+                        <StackPanel Spacing="3" VerticalAlignment="Center">
+                            <TextBlock
+                                x:Name="AccountTitle"
+                                FontSize="16"
+                                FontWeight="SemiBold"
+                                Text="Checking…" />
+                            <TextBlock
+                                x:Name="AccountDetail"
+                                TextWrapping="Wrap"
+                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                Text="" />
+                        </StackPanel>
+                    </StackPanel>
+
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button
+                            x:Name="SignInButton"
+                            Style="{StaticResource AccentButtonStyle}"
+                            Content="Sign in…"
+                            Click="SignIn_Click" />
+                        <Button
+                            x:Name="SignOutButton"
+                            Content="Sign out"
+                            IsEnabled="False"
+                            Click="SignOut_Click" />
+                        <ProgressRing x:Name="Busy" Width="18" Height="18" IsActive="False" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Teams" FontWeight="SemiBold" />
+                    <TextBlock
+                        x:Name="TeamsText"
+                        TextWrapping="Wrap"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Sign in to list your Apple developer teams." />
+                </StackPanel>
+            </Border>
+
+            <TextBlock
+                Style="{StaticResource PageSubtitle}"
+                Text="EmLoad signs in directly with Apple (GrandSlam over pinned TLS). Your password is only ever sent to Apple; it is never written somewhere on this PC." />
+        </StackPanel>
+    </ScrollViewer>
+</Page>

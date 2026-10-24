@@ -1,0 +1,89 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="EmLoad.WinUI.Pages.SettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    NavigationCacheMode="Required">
+
+    <ScrollViewer>
+        <StackPanel Padding="28,20,28,28" Spacing="16" MaxWidth="900" HorizontalAlignment="Left">
+
+            <StackPanel Spacing="2">
+                <TextBlock Style="{StaticResource PageTitle}" Text="Settings" />
+                <TextBlock
+                    Style="{StaticResource PageSubtitle}"
+                    Text="Connection preferences, where signed IPAs go, and the signing helper." />
+            </StackPanel>
+
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel Spacing="14">
+                    <ComboBox
+                        x:Name="ConnectionCombo"
+                        Header="Device connection"
+                        MinWidth="340"
+                        SelectionChanged="Connection_Changed">
+                        <ComboBoxItem Content="Automatic (USB then Wi-Fi)" Tag="auto" />
+                        <ComboBoxItem Content="USB only" Tag="usb" />
+                        <ComboBoxItem Content="Wi-Fi only" Tag="wifi" />
+                    </ComboBox>
+
+                    <Grid ColumnSpacing="8">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <TextBox
+                            x:Name="SignedDirBox"
+                            Grid.Column="0"
+                            Header="Signed IPA folder"
+                            PlaceholderText="(default: data dir\signed)" />
+                        <Button
+                            Grid.Column="1"
+                            VerticalAlignment="Bottom"
+                            Content="Browse…"
+                            Click="BrowseSignedDir_Click" />
+                    </Grid>
+
+                    <CheckBox
+                        x:Name="KeepSignedCheck"
+                        Content="Keep signed .ipa files by default"
+                        Click="KeepSigned_Click" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Signing helper (zsign)" FontWeight="SemiBold" />
+                    <TextBlock
+                        x:Name="ZsignText"
+                        TextWrapping="Wrap"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Checking…" />
+                    <StackPanel Orientation="Horizontal" Spacing="8">
+                        <Button
+                            x:Name="ZsignButton"
+                            Content="Download zsign"
+                            Click="DownloadZsign_Click" />
+                        <ProgressRing x:Name="ZsignBusy" Width="18" Height="18" IsActive="False" />
+                        <Button Content="Re-check" Click="RecheckZsign_Click" />
+                    </StackPanel>
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorder}">
+                <StackPanel Spacing="6">
+                    <TextBlock Text="Data directory" FontWeight="SemiBold" />
+                    <TextBlock
+                        x:Name="DataDirText"
+                        TextWrapping="Wrap"
+                        IsTextSelectionEnabled="True"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        FontFamily="Cascadia Mono, Consolas"
+                        FontSize="12"
+                        Text="" />
+                    <Button Content="Open folder" Click="OpenDataDir_Click" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

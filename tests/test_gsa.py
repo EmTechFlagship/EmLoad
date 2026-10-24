@@ -53,3 +53,34 @@ def test_gmt_offset_label():
     offset = datetime.timedelta(hours=5, minutes=30)
     assert anisette._gmt_offset_label(offset) == "GMT+05:30"
     assert anisette._gmt_offset_label(-datetime.timedelta(hours=8)) == "GMT-08:00"
+
+
+def test_gsa_request_uses_windows_client_identity(monkeypatch):
+    import plistlib
+
+    captured = {}
+
+    class Response:
+        status_code = 200
+        content = plistlib.dumps({"Response": {}})
+
+        @staticmethod
+        def raise_for_status():
+            pass
+
+    def post(url, *, headers, **kwargs):
+        captured.update(headers)
+        return Response()
+
+    monkeypatch.setattr(gsa.requests, "post", post)
+    monkeypatch.setattr(gsa.tls, "ca_bundle", lambda: "ca.pem")
+
+    gsa._gs_request(
+        {},
+        anisette._wire_safe_headers(
+            {"X-MMe-Client-Info": "<MacBook> <macOS> <com.apple.dt.Xcode/1>"}
+        ),
+    )
+
+    assert captured["X-MMe-Client-Info"] == anisette._WINDOWS_CLIENT_INFO
+    assert captured["User-Agent"] == "akd/1.0 CFNetwork/808.1.4"

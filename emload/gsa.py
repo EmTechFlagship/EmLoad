@@ -45,7 +45,7 @@ _GS_ENDPOINT = "https://gsa.apple.com/grandslam/GsService2"
 _TRUSTED_TRIGGER = "https://gsa.apple.com/auth/verify/trusteddevice"
 _VALIDATE = "https://gsa.apple.com/grandslam/GsService2/validate"
 
-_GS_USER_AGENT = "akd/1.0 CFNetwork/978.0.7 Darwin/18.7.0"
+_GS_USER_AGENT = "akd/1.0 CFNetwork/808.1.4"
 _XCODE_APP_INFO = "com.apple.gs.xcode.auth"
 _XCODE_VERSION = "11.2 (11B41)"
 _TIMEOUT = 30

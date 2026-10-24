@@ -27,7 +27,8 @@
     emload emside-store watch    keep running; auto-install SideStore on attach
     emload emside-store serve    run the HTTP API (the SideStore app's AltServer
                                   alternative) so the phone can trigger installs
-    emload gui                   launch the desktop app
+    emload rpc                   run the JSON-RPC bridge used by the WinUI app
+    emload gui                   launch the PySide6 desktop app
 
 Every command accepts ``--json`` for machine-readable output, and device
 commands accept ``--udid`` and ``--connection usb|wifi|auto``.
@@ -317,6 +318,13 @@ def cmd_gui(args: argparse.Namespace) -> int:
 
     run_gui()
     return 0
+
+
+def cmd_rpc(args: argparse.Namespace) -> int:
+    """Serve the WinUI front end over stdin/stdout (newline-delimited JSON)."""
+    from .rpc import serve
+
+    return serve()
 
 
 # --------------------------------------------------------------------------- #
@@ -621,6 +629,10 @@ def build_parser() -> argparse.ArgumentParser:
                                 help="allow installing to a mismatched platform")
 
     sub.add_parser("gui", parents=[common], help="launch the desktop app")
+    sub.add_parser(
+        "rpc", parents=[common],
+        help="serve the JSON-RPC bridge used by the WinUI front end (stdio)",
+    )
 
     return parser
 
@@ -674,6 +686,7 @@ def dispatch(args: argparse.Namespace) -> int:
         "emside-store": cmd_emstore_server,
         "emstore-server": cmd_emstore_server,
         "emside-store-server": cmd_emstore_server,
+        "rpc": cmd_rpc,
         "gui": cmd_gui,
     }
     return commands[args.command](args)
