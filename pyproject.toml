@@ -29,6 +29,7 @@ dependencies = [
     "cryptography>=44",
     "certifi>=2024.1.1",
     "requests>=2.31",
+    "wsproto>=1.2",
 ]
 
 [project.optional-dependencies]

@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("EmLoad.WinUI")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+4fb379765b7a9272700459725855914c0dca109d")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+0a788f12ebaade9cedc9e44f58f655a0336d9193")]
 [assembly: System.Reflection.AssemblyProductAttribute("EmLoad.WinUI")]
 [assembly: System.Reflection.AssemblyTitleAttribute("EmLoad.WinUI")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

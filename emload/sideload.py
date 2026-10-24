@@ -13,6 +13,7 @@ reporting/cleanup of a folder full of kept IPAs.
 from __future__ import annotations
 
 import datetime
+import os
 import shutil
 import stat
 import tempfile
@@ -142,21 +143,27 @@ def _as_signed_dir(directory: str | None) -> Path:
     return Path(directory).expanduser().resolve()
 
 
-def _scratch_root(target: Path, deepest: int) -> Path:
-    """Where this run's scratch directory should live, given how deep the IPA is.
+def _scratch_roots(target: Path, deepest: int) -> list[Path]:
+    """Candidate scratch locations, shortest usable Windows location first.
 
-    Beside the signed output by preference, so the heavy I/O stays on the disk the
-    user chose. That is a performance preference though, and fitting inside the
-    platform's path limit is correctness - so a bundle deep enough to overflow goes
-    to the system temp directory instead, which is both shorter and where every
-    other program puts its scratch.
+    zsign uses legacy path handling, so the user's Temp folder can itself be too
+    deep. ``C:\\eml`` leaves enough room for almost every IPA and is created only
+    when needed. Windows Temp and the regular Temp folder remain fallbacks for
+    machines where creating a directory at the drive root is not permitted.
     """
-    if deepest <= 0:
-        return target
     budget = _MAX_PATH - _ZSIGN_HEADROOM - deepest - len(SCRATCH_PREFIX) - 8
-    if len(str(target)) <= budget:
-        return target
-    return Path(tempfile.gettempdir())
+    candidates = [target] if deepest <= 0 or len(str(target)) <= budget else []
+    if os.name == "nt":
+        drive_root = Path(tempfile.gettempdir()).anchor
+        if drive_root:
+            candidates.extend((Path(drive_root) / "eml", Path(os.environ.get("SystemRoot", r"C:\\Windows")) / "Temp"))
+    candidates.append(Path(tempfile.gettempdir()))
+
+    unique: list[Path] = []
+    for candidate in candidates:
+        if candidate not in unique:
+            unique.append(candidate)
+    return unique
 
 
 def _open_signed_dir(directory: str | None, deepest: int = 0) -> tuple[Path, Path]:
@@ -164,25 +171,30 @@ def _open_signed_dir(directory: str | None, deepest: int = 0) -> tuple[Path, Pat
     try:
         target = _as_signed_dir(directory)
         target.mkdir(parents=True, exist_ok=True)
-        root = _scratch_root(target, deepest)
-        root.mkdir(parents=True, exist_ok=True)
-        scratch = Path(tempfile.mkdtemp(prefix=SCRATCH_PREFIX, dir=root))
     except OSError as exc:
         raise SideloadError(
             f"Cannot use '{directory or exc.filename}' as the folder for signed IPAs: "
             f"{exc.strerror or exc}"
         ) from exc
 
-    if deepest and len(str(scratch)) + _ZSIGN_HEADROOM + deepest > _MAX_PATH:
+    failures: list[str] = []
+    for root in _scratch_roots(target, deepest):
+        try:
+            root.mkdir(parents=True, exist_ok=True)
+            scratch = Path(tempfile.mkdtemp(prefix=SCRATCH_PREFIX, dir=root))
+        except OSError as exc:
+            failures.append(f"{root}: {exc.strerror or exc}")
+            continue
+        if not deepest or len(str(scratch)) + _ZSIGN_HEADROOM + deepest <= _MAX_PATH:
+            return target, scratch
         shutil.rmtree(scratch, ignore_errors=True)
-        raise SideloadError(
-            f"This app's files are nested too deeply to sign on this machine: the "
-            f"longest path inside it is {deepest} characters, and the working folder "
-            f"'{scratch.parent}' leaves too little of the {_MAX_PATH}-character "
-            "Windows path limit. Choosing a shorter folder for signed IPAs in Settings "
-            "will fix it."
-        )
-    return target, scratch
+
+    tried = "; ".join(failures) or "all available working folders were too long"
+    raise SideloadError(
+        f"This app's files are nested too deeply to sign on this machine: the longest path "
+        f"inside it is {deepest} characters. EmLoad could not create a short enough working "
+        f"folder within the {_MAX_PATH}-character Windows path limit ({tried})."
+    )
 
 
 def run_sideload(

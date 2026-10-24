@@ -25,6 +25,9 @@ two things:
     GET  /api/jobs         jobs, newest first
     GET  /api/jobs/<id>    one job, including its log and results
 
+The EmLoad certificate transfer runs separately over HTTPS on the next port,
+with a per-run bearer token and a pinned self-signed certificate.
+
 Long-running work (refresh/install) runs on a single serial background worker;
 the API returns 202 with a ``job_id`` immediately and the client polls
 ``/api/jobs/<id>``. Jobs are kept in memory only (volatile, never spilled).
@@ -37,19 +40,38 @@ sign-in state without echoing session tokens.
 
 from __future__ import annotations
 
+import base64
 import json
 import queue
 import requests
+import secrets
+import ssl
 import sys
 import threading
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlparse
 
-from . import __version__, apps, device, gsa, paths, registry, sideload, tls
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
+
+from . import (
+    __version__,
+    apps,
+    device,
+    gsa,
+    paths,
+    provision,
+    registry,
+    sideload,
+    signing,
+    tls,
+)
 from .errors import EmLoadError
 
 #: Human-readable service name (shown in /api/status + the HTTP Server header).
@@ -61,6 +83,7 @@ DEFAULT_PORT = 1740
 #: Jobs are dropped oldest-first once this many have accumulated (the UI only
 #: ever shows a handful, and finished jobs are not worth memory).
 _JOB_LIMIT = 100
+CERTIFICATE_TRANSFER_PORT_OFFSET = 1
 
 
 # --------------------------------------------------------------------------- #
@@ -702,6 +725,105 @@ class EmSideStoreHTTPServer(ThreadingHTTPServer):
 EmStoreHTTPServer = EmSideStoreHTTPServer
 
 
+def _certificate_transfer_identity() -> tuple[Path, Path, str]:
+    """Create or load the pinned TLS identity used for certificate transfer."""
+    cert_path = paths.tls_dir() / "certificate-transfer-cert.pem"
+    key_path = paths.tls_dir() / "certificate-transfer-key.pem"
+    if not cert_path.exists() or not key_path.exists():
+        private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        now = datetime.now(timezone.utc)
+        certificate = (
+            x509.CertificateBuilder()
+            .subject_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "EmLoad")]))
+            .issuer_name(x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "EmLoad")]))
+            .public_key(private_key.public_key())
+            .serial_number(x509.random_serial_number())
+            .not_valid_before(now)
+            .not_valid_after(now + timedelta(days=365 * 5))
+            .sign(private_key, hashes.SHA256())
+        )
+        key_path.write_bytes(
+            private_key.private_bytes(
+                serialization.Encoding.PEM,
+                serialization.PrivateFormat.PKCS8,
+                serialization.NoEncryption(),
+            )
+        )
+        cert_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+
+    certificate = x509.load_pem_x509_certificate(cert_path.read_bytes())
+    fingerprint = certificate.fingerprint(hashes.SHA256()).hex()
+    return cert_path, key_path, fingerprint
+
+
+class CertificateTransferHTTPServer(ThreadingHTTPServer):
+    """TLS endpoint that transfers the active EmLoad PKCS#12 certificate."""
+
+    daemon_threads = True
+    allow_reuse_address = True
+
+    def __init__(self, address: tuple[str, int], token: str) -> None:
+        self.token = token
+        super().__init__(address, CertificateTransferHandler)
+
+
+class CertificateTransferHandler(BaseHTTPRequestHandler):
+    server_version = f"EmLoadCertificate/{__version__}"
+    sys_version = ""
+
+    def log_message(self, _format: str, *_args: Any) -> None:
+        return
+
+    def _send_error(self, code: int, message: str) -> None:
+        body = json.dumps({"error": message}).encode("utf-8")
+        self.send_response(code)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def do_GET(self) -> None:
+        if urlparse(self.path).path != "/api/certificate":
+            self._send_error(404, "unknown endpoint")
+            return
+
+        authorization = self.headers.get("Authorization", "")
+        supplied_token = authorization.removeprefix("Bearer ").strip()
+        if not secrets.compare_digest(supplied_token, self.server.token):
+            self._send_error(401, "invalid transfer token")
+            return
+
+        try:
+            key_pem, cert_der, _serial = provision.signing_identity()
+            p12 = signing.build_p12(cert_der, key_pem)
+        except (EmLoadError, ValueError) as exc:
+            self._send_error(409, f"EmLoad has no provisioned certificate: {exc}")
+            return
+
+        body = json.dumps({
+            "p12": base64.b64encode(p12).decode("ascii"),
+            "password": signing.P12_PASSWORD,
+        }).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+
+def create_certificate_transfer_server(
+    host: str, port: int, token: str
+) -> tuple[CertificateTransferHTTPServer, str]:
+    """Create a TLS server and return it with the SHA-256 certificate fingerprint."""
+    cert_path, key_path, fingerprint = _certificate_transfer_identity()
+    httpd = CertificateTransferHTTPServer((host, port), token)
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    context.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
+    httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
+    return httpd, fingerprint
+
+
 class ApiHandler(BaseHTTPRequestHandler):
     """JSON API: status/devices/apps/jobs (GET) and refresh/install (POST)."""
 
@@ -943,13 +1065,37 @@ def run_server(
     """Serve the API until interrupted (Ctrl+C); the CLI calls this directly."""
     httpd = create_server(host, port, jobs=jobs, worker=worker, log=log)
     actual_port = httpd.server_address[1]
+    transfer_port = actual_port + CERTIFICATE_TRANSFER_PORT_OFFSET
+    transfer_token = secrets.token_urlsafe(32)
+    try:
+        transfer_httpd, fingerprint = create_certificate_transfer_server(
+            host, transfer_port, transfer_token
+        )
+    except (OSError, ValueError):
+        httpd.server_close()
+        httpd.worker.stop()
+        raise
+
+    transfer_thread = threading.Thread(
+        target=transfer_httpd.serve_forever,
+        name="EmLoadCertificateTransfer",
+        daemon=True,
+    )
+    transfer_thread.start()
     say: Callable[[str], None] = log or (
         lambda message: print(message, file=sys.stderr)
     )
     say(
         f"{SERVICE_NAME} listening on http://{host}:{actual_port} - the "
         "SideStore app's AltServer alternative.\n"
-        "No authentication: keep it on a trusted network, or bind to 127.0.0.1.\n"
+        "The SideStore API has no authentication; keep it on a trusted network "
+        "or bind to 127.0.0.1.\n"
+        f"EmLoad certificate transfer: https://<this PC's LAN IP>:{transfer_port}"
+        "/api/certificate\n"
+        f"Transfer token: {transfer_token}\n"
+        f"TLS certificate SHA-256 fingerprint: {fingerprint}\n"
+        "Enter these transfer details in EmContainer. Stop the server after "
+        "importing the certificate.\n"
         "Press Ctrl+C to stop."
     )
     try:
@@ -957,6 +1103,8 @@ def run_server(
     except KeyboardInterrupt:
         pass
     finally:
+        transfer_httpd.shutdown()
+        transfer_httpd.server_close()
         httpd.server_close()
         worker = httpd.worker
         worker.stop()

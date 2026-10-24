@@ -1,0 +1,41 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<ContentDialog x:ConnectionId='1'
+    x:Class="EmLoad.WinUI.Dialogs.LoginDialog"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="Sign in to iCloud"
+    PrimaryButtonText="Sign In"
+    CloseButtonText="Cancel"
+    DefaultButton="Primary"
+                                             >
+
+    <StackPanel Width="400" Spacing="10">
+        <TextBlock
+            TextWrapping="Wrap"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Text="EmLoad only sends your credentials to Apple over a pinned TLS connection. The password is never stored on disk." />
+
+        <TextBox x:ConnectionId='2'
+            x:Name="EmailBox"
+            Header="Apple ID email"
+            PlaceholderText="you@icloud.com" />
+
+        <PasswordBox x:ConnectionId='3'
+            x:Name="PasswordBox"
+            Header="Password"
+            PlaceholderText="Apple ID password" />
+
+        <TextBox x:ConnectionId='4'
+            x:Name="CodeBox"
+            Header="Verification code"
+            PlaceholderText="6-digit code"
+            Visibility="Collapsed" />
+
+        <TextBlock x:ConnectionId='5'
+            x:Name="StatusText"
+            TextWrapping="Wrap"
+            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+            Text="" />
+    </StackPanel>
+</ContentDialog>
+

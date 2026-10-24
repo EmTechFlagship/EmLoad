@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import io
 import locale
+import os
 import re
 import warnings
 from datetime import datetime, timedelta, timezone
@@ -214,7 +215,9 @@ def ascii_locale(preferred: str | None = None) -> str:
     return "en_US"
 
 
-def _wire_safe_headers(raw: dict[str, Any]) -> dict[str, Any]:
+def _wire_safe_headers(
+    raw: dict[str, Any], *, client_info: str | None = None
+) -> dict[str, Any]:
     """Rewrite anisette fields that must be both latin-1-safe and Apple-accepted."""
     headers = dict(raw)
     headers["X-Apple-I-TimeZone"] = ascii_timezone()
@@ -222,12 +225,38 @@ def _wire_safe_headers(raw: dict[str, Any]) -> dict[str, Any]:
     headers["X-Apple-Locale"] = ascii_locale(
         existing_locale if isinstance(existing_locale, str) else None
     )
-    headers["X-MMe-Client-Info"] = _WINDOWS_CLIENT_INFO
+    headers["X-MMe-Client-Info"] = client_info or _WINDOWS_CLIENT_INFO
     return headers
+
+
+_REMOTE_PROVIDER_ENV = "EMLOAD_ANISETTE"
+_remote_user_agent: str | None = None
+
+
+def provider_name() -> str:
+    """The source of anisette headers (remote is required for current Apple sign-in)."""
+    return "local" if os.environ.get(_REMOTE_PROVIDER_ENV, "").strip().lower() == "local" else "remote"
+
+
+def gsa_user_agent() -> str | None:
+    """The matching GSA user agent for the most recently fetched remote headers."""
+    return _remote_user_agent if provider_name() == "remote" else None
 
 
 def get_headers() -> dict[str, Any]:
     """Return a fresh set of anisette headers for a GSA request."""
+    global _remote_user_agent
+    if provider_name() == "remote":
+        # Apple now rejects the final token exchange for Android-library
+        # anisette identities (-80046).  A v3 service supplies a unique,
+        # provisioned Mac identity; Apple ID credentials never leave EmLoad.
+        from . import anisette_remote
+
+        fetched = anisette_remote.fetch()
+        _remote_user_agent = fetched.user_agent
+        return _wire_safe_headers(fetched.headers, client_info=fetched.client_info)
+
+    _remote_user_agent = None
     provider = _load_provider()
     return _wire_safe_headers(dict(provider.get_data()))
 
@@ -238,9 +267,19 @@ def status() -> dict[str, Any]:
         version: str | None = metadata.version("Anisette")
     except metadata.PackageNotFoundError:
         version = None
-    state = paths.anisette_state_file()
+    remote = provider_name() == "remote"
+    if remote:
+        from . import anisette_remote
+
+        state = paths.anisette_dir() / anisette_remote.STATE_FILE
+        servers = list(anisette_remote.RemoteAnisette().servers())
+    else:
+        state = paths.anisette_state_file()
+        servers = []
     return {
-        "available": version is not None,
+        "available": True if remote else version is not None,
+        "provider": "remote" if remote else "local",
+        "servers": servers,
         "package_version": version,
         "state_cached": state.exists(),
         "state_path": str(state),

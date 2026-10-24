@@ -3,9 +3,9 @@
 Sideload iOS apps with a free Apple ID — an AltServer-style toolkit with a
 **Python CLI** and a **PySide6 desktop app**.
 
-No jailbreak. No paid developer account. No third-party middleman: EmLoad talks
-to Apple directly, the same way Xcode does, and to your iPhone over USB/Wi-Fi
-through `pymobiledevice3`.
+No jailbreak. No paid developer account. EmLoad talks to Apple directly, the
+same way Xcode does, and to your iPhone over USB/Wi-Fi through
+`pymobiledevice3`.
 
 ```
 ┌─────────────────────┐   engine (Python)   ┌──────────────────────────┐
@@ -20,9 +20,9 @@ through `pymobiledevice3`.
 ## Features
 
 - **Install any `.ipa`** with a free Apple ID, over USB or Wi-Fi
-- **Apple ID sign-in in-process**: GrandSlam (SRP-6a) with locally-generated
-  anisette headers, over TLS pinned to Apple's CA — your password never leaves
-  your machine, and isn't stored anywhere
+- **Apple ID sign-in in-process**: GrandSlam (SRP-6a) over TLS pinned to
+  Apple's CA. Your password, verification code, and Apple session tokens never
+  leave your machine and are not stored anywhere.
 - **Automatic provisioning**: registers your device, issues a 7-day development
   certificate, creates the App ID, and downloads the profile — all via Apple's
   `developerservices2` API
@@ -46,9 +46,8 @@ through `pymobiledevice3`.
   `~/Downloads`, a previously downloaded copy, or the latest published GitHub
   release (stable / alpha / nightly). Runs as `emload emside-store watch`,
   one-shot with `emload emside-store install`, or from the GUI's Devices page.
-  `emload emside-store serve` also exposes a small JSON HTTP
-  API (`/api/refresh`, `/api/install`, ...) so the phone itself can ask the PC
-  to sign and install — the actual "server" half of AltServer.
+  `emload emside-store serve` also exposes a small JSON API so the phone can
+  request installs and import EmLoad's signing certificate into LiveContainer.
 - **Live install progress** in both CLI and GUI (upload MBs + installd phases)
 - **Miscellaneous tweaks (Nugget-based)**: SpringBoard options, daemon toggles
   and Liquid Glass settings applied with the sparserestore backup-restore
@@ -113,7 +112,7 @@ emload setup                 download zsign (needed for signing)
 emload emside-store status   EmSideStore state: sign-in, devices, IPA options
 emload emside-store install  sideload SideStore onto connected device(s) now
 emload emside-store watch    install or refresh SideStore on device attach
-emload emside-store serve    run the HTTP API the SideStore app talks to
+emload emside-store serve    run the HTTP API and EmLoad certificate transfer endpoint
 emload gui                   launch the desktop app
 ```
 
@@ -138,6 +137,15 @@ and `--connection usb|wifi|auto`.
 > `GET /api/apps?udid=`, `POST /api/refresh` and `POST /api/install` (both
 > return `202` + `job_id`; poll `GET /api/jobs/<id>`), `GET /api/jobs`. There
 > is **no authentication** — keep it bound to localhost or a trusted LAN.
+>
+> To import EmLoad's signing certificate into LiveContainer, first provision
+> EmLoad at least once, then start the API on your LAN:
+> `emload emside-store serve --host 0.0.0.0`. On startup, EmLoad prints an
+> HTTPS certificate-transfer URL, a per-run token, and the SHA-256 fingerprint
+> of its pinned TLS certificate. Enter all three in LiveContainer's Settings
+> \> Import/refresh certificate from EmLoad. The transfer endpoint requires
+> the token and uses TLS; stop the server after importing. The transfer URL is
+> available only while this command is running.
 
 > **On Windows, if `emload` isn't on your PATH**, use the repo's `emload.bat`
 > launcher instead (it always runs the project's `.venv`), e.g.
@@ -202,10 +210,11 @@ The desktop app has a sidebar with seven pages:
 1. **Device I/O** — `pymobiledevice3`: usbmux discovery, lockdown pairing,
    AFC staging, `installation_proxy` install, SpringBoard icons.
 2. **Apple ID auth** — GrandSlam (Apple's modified SRP-6a) against
-   `gsa.apple.com`, with anisette headers produced in-process by the pure-Python
-   `Anisette` package (Apple's own provisioning libraries run locally, so no
-   remote anisette server). Two-factor auth is a two-step flow: trigger, then
-   submit the code.
+   `gsa.apple.com`, with a unique Mac anisette identity provisioned through a
+   public v3 service. The service receives only the random device identity and
+   opaque provisioning blobs; the Apple ID, password, verification code, and
+   session tokens go directly between EmLoad and Apple. Two-factor auth is a
+   two-step flow: trigger, then submit the code.
 3. **TLS** — requests verify against `certifi` + Apple's root/intermediate CA
    (`emload/certs/apple_gsa_ca.pem`). Verification is never disabled.
 4. **Provisioning** — `developerservices2.apple.com`: list team, submit CSR,

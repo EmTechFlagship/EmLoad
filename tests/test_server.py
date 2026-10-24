@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import socket
+import ssl
 import threading
 import time
 import urllib.error
@@ -418,3 +421,70 @@ def test_post_refresh_rejects_bad_bodies(httpd):
 
     code, body = _post(_url(httpd) + "/api/refresh", {"udid": 7})
     assert code == 400
+
+
+@pytest.fixture
+def certificate_httpd(tmp_path, monkeypatch):
+    monkeypatch.setattr(server.paths, "tls_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        server.provision, "signing_identity",
+        lambda: (b"private-key", b"certificate", "serial"),
+    )
+    monkeypatch.setattr(
+        server.signing, "build_p12",
+        lambda cert_der, key_pem: b"test-pkcs12",
+    )
+    httpd, fingerprint = server.create_certificate_transfer_server(
+        "127.0.0.1", 0, "pairing-token"
+    )
+    threading.Thread(target=httpd.serve_forever, daemon=True).start()
+    try:
+        yield httpd, fingerprint
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def _certificate_get(httpd, token: str | None = None) -> tuple[int, dict]:
+    host, port = httpd.server_address[:2]
+    request = urllib.request.Request(f"https://{host}:{port}/api/certificate")
+    if token:
+        request.add_header("Authorization", f"Bearer {token}")
+    try:
+        with urllib.request.urlopen(
+            request, context=ssl._create_unverified_context(), timeout=10
+        ) as response:
+            return response.status, json.loads(response.read())
+    except urllib.error.HTTPError as exc:
+        return exc.code, json.loads(exc.read())
+
+
+def test_certificate_transfer_requires_pairing_token(certificate_httpd):
+    httpd, _fingerprint = certificate_httpd
+
+    code, body = _certificate_get(httpd)
+
+    assert code == 401
+    assert body["error"] == "invalid transfer token"
+
+
+def test_certificate_transfer_fingerprint_matches_tls_certificate(certificate_httpd):
+    httpd, fingerprint = certificate_httpd
+    host, port = httpd.server_address[:2]
+    context = ssl._create_unverified_context()
+
+    with socket.create_connection((host, port), timeout=10) as connection:
+        with context.wrap_socket(connection, server_hostname=host) as tls_connection:
+            certificate = tls_connection.getpeercert(binary_form=True)
+
+    assert hashlib.sha256(certificate).hexdigest() == fingerprint
+
+
+def test_certificate_transfer_returns_pkcs12_with_valid_token(certificate_httpd):
+    httpd, fingerprint = certificate_httpd
+
+    code, body = _certificate_get(httpd, "pairing-token")
+
+    assert len(fingerprint) == 64
+    assert code == 200
+    assert body == {"p12": "dGVzdC1wa2NzMTI=", "password": "EmLoad"}

@@ -88,7 +88,10 @@ def _gs_request(params: dict[str, Any], headers: dict[str, str]) -> dict[str, An
     req_headers = {
         "Content-Type": "text/x-xml-plist",
         "Accept": "*/*",
-        "User-Agent": _GS_USER_AGENT,
+        "User-Agent": anisette.gsa_user_agent() or _GS_USER_AGENT,
+        # Apple has intermittently returned HTML 503 after reusing a GSA socket.
+        # A sign-in is only a few requests, so a fresh connection is safer.
+        "Connection": "close",
         "X-MMe-Client-Info": headers.get("X-MMe-Client-Info", ""),
     }
     resp = requests.post(

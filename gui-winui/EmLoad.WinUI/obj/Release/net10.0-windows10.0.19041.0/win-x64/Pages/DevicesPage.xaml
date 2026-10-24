@@ -1,0 +1,106 @@
+﻿<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="EmLoad.WinUI.Pages.DevicesPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:services="using:EmLoad.WinUI.Services"
+    NavigationCacheMode="Required">
+
+    <ScrollViewer>
+        <StackPanel Padding="28,20,28,28" Spacing="16" MaxWidth="1000" HorizontalAlignment="Left">
+
+            <StackPanel Spacing="2">
+                <TextBlock Style="{StaticResource PageTitle}" Text="Connected devices" />
+                <TextBlock
+                    Style="{StaticResource PageSubtitle}"
+                    Text="Plug in your iPhone or iPad, unlock it, and tap &quot;Trust This Computer&quot;. Wi-Fi devices appear too when reachable." />
+            </StackPanel>
+
+            <StackPanel Orientation="Horizontal" Spacing="10" VerticalAlignment="Center">
+                <Button x:ConnectionId='10' Content="Refresh"                       />
+                <ProgressRing x:ConnectionId='11' x:Name="DevicesBusy" Width="18" Height="18" IsActive="False" />
+                <TextBlock x:ConnectionId='12'
+                    x:Name="DeviceCountText"
+                    VerticalAlignment="Center"
+                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                    Text="" />
+            </StackPanel>
+
+            <Border Style="{StaticResource CardBorder}">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock x:ConnectionId='2'
+                        x:Name="NoDevicesText"
+                        Padding="8,22"
+                        HorizontalAlignment="Center"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="No device connected. Plug one in — it appears here automatically." />
+
+                    <ListView x:ConnectionId='3'
+                        x:Name="DeviceList"
+                        Grid.Row="0"
+                        SelectionMode="Single"
+                        IsItemClickEnabled="False"
+                        Visibility="Collapsed">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Padding" Value="8,2" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate                                 >
+                                <Grid x:ConnectionId='5' Padding="0,10" ColumnSpacing="14">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+
+                                    <FontIcon
+                                        Grid.Column="0"
+                                        FontSize="28"
+                                        VerticalAlignment="Center"
+                                        Glyph="&#xE8EA;" />
+
+                                    <StackPanel Grid.Column="1" Spacing="1">
+                                        <TextBlock x:ConnectionId='7'
+                                                                       
+                                            FontWeight="SemiBold" />
+                                        <TextBlock x:ConnectionId='8'
+                                                                    
+                                            FontSize="12"
+                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                        <TextBlock x:ConnectionId='9'
+                                                                
+                                            FontFamily="Cascadia Mono, Consolas"
+                                            FontSize="11"
+                                            Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                            IsTextSelectionEnabled="True" />
+                                    </StackPanel>
+
+                                    <Border
+                                        Grid.Column="2"
+                                        VerticalAlignment="Center"
+                                        Padding="10,4"
+                                        CornerRadius="11"
+                                        Background="{ThemeResource ControlFillColorSecondaryBrush}">
+                                        <TextBlock x:ConnectionId='6'
+                                                                           
+                                            FontSize="11"
+                                            FontWeight="SemiBold" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
+                </Grid>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>
+
