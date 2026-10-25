@@ -1,6 +1,6 @@
 {
   "version": 2,
-  "dgSpecHash": "DGcmy8mkeVY=",
+  "dgSpecHash": "FPqSgGOxAuM=",
   "success": true,
   "projectFilePath": "C:\\Users\\Emiry\\EmLoadServer\\gui-winui\\EmLoad.WinUI\\EmLoad.WinUI.csproj",
   "expectedPackageFiles": [
@@ -18,9 +18,6 @@
     "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk.widgets\\1.8.251231004\\microsoft.windowsappsdk.widgets.1.8.251231004.nupkg.sha512",
     "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsappsdk.winui\\1.8.260803003\\microsoft.windowsappsdk.winui.1.8.260803003.nupkg.sha512",
     "C:\\Users\\Emiry\\.nuget\\packages\\system.numerics.tensors\\9.0.0\\system.numerics.tensors.9.0.0.nupkg.sha512",
-    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.netcore.app.runtime.win-x64\\10.0.13\\microsoft.netcore.app.runtime.win-x64.10.0.13.nupkg.sha512",
-    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windowsdesktop.app.runtime.win-x64\\10.0.13\\microsoft.windowsdesktop.app.runtime.win-x64.10.0.13.nupkg.sha512",
-    "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.aspnetcore.app.runtime.win-x64\\10.0.13\\microsoft.aspnetcore.app.runtime.win-x64.10.0.13.nupkg.sha512",
     "C:\\Users\\Emiry\\.nuget\\packages\\microsoft.windows.sdk.net.ref\\10.0.19041.57\\microsoft.windows.sdk.net.ref.10.0.19041.57.nupkg.sha512"
   ],
   "logs": []
