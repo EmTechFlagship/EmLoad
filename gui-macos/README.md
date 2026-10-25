@@ -46,6 +46,16 @@ and read/write the user's Application Support folder.
 RUN=1 ./scripts/build-app.sh    # build, sign and launch
 ```
 
+### Beta release builds
+
+Pushing a versioned beta tag (for example, `v0.1.0-beta1`) runs the
+`Release` GitHub Actions workflow. You can also run that workflow manually
+with a beta channel such as `Beta 1`. It builds an Apple-silicon
+`EmLoad-0.1.0-beta1-macos-arm64.zip` and attaches it to the same prerelease as
+the Windows installers. The archive contains `EmLoad.app`; it is ad-hoc signed,
+not notarized. Use only on macOS 13 or newer, and follow the setup instructions
+above for the Python engine requirements.
+
 The build script refuses to run on Intel Macs and produces an arm64-only app.
 The Swift app also fails compilation for non-arm64 targets. The script:
 

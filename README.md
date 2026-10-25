@@ -82,6 +82,10 @@ Download these from the **0.1.0 Beta 1** release:
 | `EmLoad-Cli-Setup-0.1.0-beta1.exe` | `emload` on your PATH (plus `emload gui` if you keep PySide6) |
 | `EmLoad-0.1.0-beta1-win-x64.zip` | Portable folder, no installer — run `First-Run.cmd` |
 
+The prerelease also includes `EmLoad-0.1.0-beta1-macos-arm64.zip` for Apple
+silicon Macs. See [gui-macos/README.md](gui-macos/README.md) for macOS
+requirements and setup.
+
 Both installers are **per-user and need no admin rights**. They install to
 `%LOCALAPPDATA%\Programs\EmLoad` (desktop) or `...\EmLoad CLI`, create a private
 virtual environment there, and install `requirements.txt` into it. That means:

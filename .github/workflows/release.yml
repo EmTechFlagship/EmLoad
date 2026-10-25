@@ -61,8 +61,100 @@ env:
   PIP_DISABLE_PIP_VERSION_CHECK: '1'
 
 jobs:
+  macos-beta:
+    name: Build macOS beta
+    if: >-
+      (github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && contains(github.ref_name, '-beta')) ||
+      (github.event_name == 'workflow_dispatch' && (contains(inputs.channel, 'Beta') || contains(inputs.channel, 'beta') || contains(inputs.tag, '-beta')))
+    runs-on: macos-15
+    timeout-minutes: 30
+    outputs:
+      outputtag: ${{ steps.version.outputs.outputtag }}
+
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@v4
+
+      - name: Select Xcode 26
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_26.3.app
+          xcodebuild -version
+
+      - name: Resolve beta version
+        id: version
+        shell: bash
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          if [[ "$GITHUB_EVENT_NAME" == "push" ]]; then
+            source_tag="$GITHUB_REF_NAME"
+          elif [[ -n "$INPUT_TAG" ]]; then
+            source_tag="$INPUT_TAG"
+          else
+            version="$INPUT_VERSION"
+            slug="$(printf '%s' "$INPUT_CHANNEL" | tr -cd '[:alnum:]' | tr '[:upper:]' '[:lower:]')"
+            source_tag="v$version-$slug"
+          fi
+
+          source_tag="${source_tag,,}"
+          if [[ "$source_tag" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)-beta([0-9]+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            beta="${BASH_REMATCH[2]}"
+          else
+            echo "Expected a beta tag like v0.1.0-beta1, got $source_tag." >&2
+            exit 1
+          fi
+
+          echo "outputtag=$version-beta$beta" >> "$GITHUB_OUTPUT"
+          echo "python=${version}b${beta}" >> "$GITHUB_OUTPUT"
+
+      - name: Set bundled engine version
+        env:
+          PYTHON_VERSION: ${{ steps.version.outputs.python }}
+        run: |
+          python3 - "$PYTHON_VERSION" <<'PY'
+          from pathlib import Path
+          import re
+          import sys
+
+          version = sys.argv[1]
+          targets = {
+              Path("emload/__init__.py"): (r'(?m)^__version__ = "[^"]*"', f'__version__ = "{version}"'),
+              Path("pyproject.toml"): (r'(?m)^version = "[^"]*"', f'version = "{version}"'),
+          }
+          for path, (pattern, replacement) in targets.items():
+              text = path.read_text(encoding="utf-8")
+              updated, count = re.subn(pattern, replacement, text, count=1)
+              if count != 1:
+                  raise SystemExit(f"Could not update the version in {path}.")
+              path.write_text(updated, encoding="utf-8")
+          PY
+
+      - name: Build EmLoad.app
+        run: ./gui-macos/scripts/build-app.sh
+
+      - name: Package macOS app
+        env:
+          OUTPUT_TAG: ${{ steps.version.outputs.outputtag }}
+        run: |
+          mkdir -p dist
+          archive="EmLoad-${OUTPUT_TAG}-macos-arm64.zip"
+          ditto -c -k --sequesterRsrc --keepParent gui-macos/dist/EmLoad.app "dist/$archive"
+
+      - name: Upload macOS build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: emload-macos-${{ steps.version.outputs.outputtag }}
+          path: dist/EmLoad-*-macos-arm64.zip
+          if-no-files-found: error
+          retention-days: 90
+
   release:
     name: Build and publish
+    needs: macos-beta
+    if: always() && (needs.macos-beta.result == 'success' || needs.macos-beta.result == 'skipped')
     runs-on: windows-latest
     timeout-minutes: 60
 
@@ -219,6 +311,13 @@ jobs:
             throw "build-installer.ps1 failed with exit code $LASTEXITCODE."
           }
 
+      - name: Download macOS beta build
+        if: needs.macos-beta.result == 'success'
+        uses: actions/download-artifact@v4
+        with:
+          name: emload-macos-${{ needs.macos-beta.outputs.outputtag }}
+          path: dist
+
       - name: Write SHA-256 checksums
         shell: pwsh
         run: |
@@ -286,6 +385,19 @@ jobs:
             'The binaries are not code-signed, so SmartScreen will warn on first run.'
             'Check the download against `SHA256SUMS.txt`.'
           ) -join "`n"
+
+          $macosArchive = "EmLoad-$env:OUTPUT_TAG-macos-arm64.zip"
+          if (Test-Path -LiteralPath (Join-Path 'dist' $macosArchive)) {
+            $macosNotes = @(
+              '## macOS beta'
+              ''
+              ('Download `{0}` for Apple silicon Macs (macOS 13 or newer).' -f $macosArchive)
+              'The app is ad-hoc signed, not notarized. Python 3.10+ with the EmLoad'
+              'requirements installed is needed to run the bundled engine; see the'
+              ("macOS setup guide: https://github.com/{0}/blob/{1}/gui-macos/README.md" -f $env:REPOSITORY, $env:TAG)
+            ) -join "`n"
+            $notes += "`n`n$macosNotes"
+          }
 
           $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
           Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8
