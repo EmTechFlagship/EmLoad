@@ -9,18 +9,52 @@ public sealed partial class LibraryPage : Page
 {
     private static readonly Dictionary<string, Microsoft.UI.Xaml.Media.Imaging.BitmapImage> IconCache = new();
 
+    // Below this page width the six-column table cannot give the app name a
+    // usable width, so the rows switch to the stacked layout.
+    private const double CompactWidth = 860;
+
     private AppState State => App.Current.State;
     private bool _refreshing;
+    private bool _compact;
 
     public LibraryPage()
     {
         InitializeComponent();
+        SizeChanged += OnPageSizeChanged;
         Loaded += OnLoaded;
     }
 
     private async void OnLoaded(object sender, RoutedEventArgs e)
     {
+        ApplyLayout(ActualWidth > 0 && ActualWidth < CompactWidth);
         await ReloadAsync();
+    }
+
+    private void OnPageSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        ApplyLayout(e.NewSize.Width < CompactWidth);
+    }
+
+    private void ApplyLayout(bool compact)
+    {
+        if (compact == _compact)
+        {
+            return;
+        }
+        _compact = compact;
+
+        AppsList.ItemTemplate = (DataTemplate)Resources[
+            compact ? "CompactRowTemplate" : "TableRowTemplate"];
+        UpdateChrome();
+    }
+
+    /// <summary>Shows the table header only when the wide layout has rows.</summary>
+    private void UpdateChrome()
+    {
+        var any = AppsList.ItemsSource is IEnumerable<LibraryApp> apps && apps.Any();
+        HeaderGrid.Visibility = any && !_compact ? Visibility.Visible : Visibility.Collapsed;
+        EmptyText.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
+        AppsList.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
     }
 
     private async Task ReloadAsync()
@@ -41,11 +75,9 @@ public sealed partial class LibraryPage : Page
 
             AppsList.ItemsSource = records;
             var any = records.Count > 0;
-            HeaderGrid.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
-            EmptyText.Visibility = any ? Visibility.Collapsed : Visibility.Visible;
-            AppsList.Visibility = any ? Visibility.Visible : Visibility.Collapsed;
             CountText.Text = any ? $"{records.Count} tracked app(s)" : "";
             RefreshAllButton.IsEnabled = any && !_refreshing;
+            UpdateChrome();
         }
         catch (EngineException exc)
         {

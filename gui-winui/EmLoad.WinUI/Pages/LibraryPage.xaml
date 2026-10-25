@@ -6,6 +6,149 @@
     xmlns:services="using:EmLoad.WinUI.Services"
     NavigationCacheMode="Required">
 
+    <Page.Resources>
+        <!-- Wide layout: the full table. Used when the page is wide enough for
+             every column to keep a usable width. -->
+        <DataTemplate x:Key="TableRowTemplate" x:DataType="services:LibraryApp">
+            <Grid ColumnSpacing="10" MinHeight="48">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="3*" />
+                    <ColumnDefinition Width="2*" />
+                    <ColumnDefinition Width="90" />
+                    <ColumnDefinition Width="90" />
+                    <ColumnDefinition Width="80" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <StackPanel
+                    Grid.Column="0"
+                    Orientation="Horizontal"
+                    Spacing="10"
+                    VerticalAlignment="Center">
+                    <Image
+                        x:Name="RowIcon"
+                        Width="28"
+                        Height="28"
+                        Stretch="Uniform"
+                        Loaded="RowIcon_Loaded"
+                        Tag="{x:Bind Icon}" />
+                    <TextBlock
+                        VerticalAlignment="Center"
+                        FontWeight="SemiBold"
+                        Text="{x:Bind DisplayName}"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTipService.ToolTip="{x:Bind DisplayName}" />
+                </StackPanel>
+
+                <TextBlock
+                    Grid.Column="1"
+                    Style="{StaticResource TableCell}"
+                    FontFamily="Cascadia Mono, Consolas"
+                    FontSize="11"
+                    Text="{x:Bind BundleId}"
+                    ToolTipService.ToolTip="{x:Bind BundleId}" />
+
+                <TextBlock
+                    Grid.Column="2"
+                    Style="{StaticResource TableCell}"
+                    Text="{x:Bind InstalledText}" />
+
+                <TextBlock
+                    Grid.Column="3"
+                    Style="{StaticResource TableCell}"
+                    Text="{x:Bind ExpiresText}" />
+
+                <TextBlock
+                    Grid.Column="4"
+                    Style="{StaticResource TableCell}"
+                    Text="{x:Bind TimeLeftText}" />
+
+                <StackPanel
+                    Grid.Column="5"
+                    Orientation="Horizontal"
+                    Spacing="6"
+                    VerticalAlignment="Center">
+                    <Button
+                        Content="Refresh"
+                        Tag="{x:Bind BundleId}"
+                        Click="RefreshOne_Click" />
+                    <Button
+                        Content="Uninstall"
+                        Tag="{x:Bind BundleId}"
+                        Click="Uninstall_Click" />
+                    <Button
+                        Content="Forget"
+                        Tag="{x:Bind BundleId}"
+                        Click="Forget_Click" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+
+        <!-- Narrow layout: the same information stacked into three lines, so a
+             small window trims long text instead of crushing or clipping it. -->
+        <DataTemplate x:Key="CompactRowTemplate" x:DataType="services:LibraryApp">
+            <Grid ColumnSpacing="12" Padding="0,8">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <Image
+                    Grid.Column="0"
+                    Width="28"
+                    Height="28"
+                    Stretch="Uniform"
+                    VerticalAlignment="Center"
+                    Loaded="RowIcon_Loaded"
+                    Tag="{x:Bind Icon}" />
+
+                <StackPanel
+                    Grid.Column="1"
+                    Spacing="1"
+                    VerticalAlignment="Center">
+                    <TextBlock
+                        Text="{x:Bind DisplayName}"
+                        FontWeight="SemiBold"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTipService.ToolTip="{x:Bind DisplayName}" />
+                    <TextBlock
+                        Text="{x:Bind BundleId}"
+                        FontFamily="Cascadia Mono, Consolas"
+                        FontSize="11"
+                        Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTipService.ToolTip="{x:Bind BundleId}" />
+                    <TextBlock
+                        Text="{x:Bind CompactStatus}"
+                        FontSize="12"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        TextTrimming="CharacterEllipsis"
+                        ToolTipService.ToolTip="{x:Bind CompactStatus}" />
+                </StackPanel>
+
+                <StackPanel
+                    Grid.Column="2"
+                    Orientation="Horizontal"
+                    Spacing="6"
+                    VerticalAlignment="Center">
+                    <Button
+                        Content="Refresh"
+                        Tag="{x:Bind BundleId}"
+                        Click="RefreshOne_Click" />
+                    <Button
+                        Content="Uninstall"
+                        Tag="{x:Bind BundleId}"
+                        Click="Uninstall_Click" />
+                    <Button
+                        Content="Forget"
+                        Tag="{x:Bind BundleId}"
+                        Click="Forget_Click" />
+                </StackPanel>
+            </Grid>
+        </DataTemplate>
+    </Page.Resources>
+
     <Grid Padding="28,20,28,24">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
@@ -21,23 +164,36 @@
                 Text="Free Apple ID signatures expire after 7 days. Refresh an app to re-sign and reinstall it before it stops opening." />
         </StackPanel>
 
-        <StackPanel
+        <Grid
             Grid.Row="1"
-            Orientation="Horizontal"
-            Spacing="10"
+            ColumnSpacing="10"
             Margin="0,0,0,12">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
             <Button
                 x:Name="RefreshAllButton"
+                Grid.Column="0"
                 Style="{StaticResource AccentButtonStyle}"
                 Content="Refresh all"
                 Click="RefreshAll_Click" />
-            <Button Content="Reload" Click="Reload_Click" />
-            <ProgressRing x:Name="Busy" Width="18" Height="18" IsActive="False" />
+            <Button Grid.Column="1" Content="Reload" Click="Reload_Click" />
+            <ProgressRing
+                x:Name="Busy"
+                Grid.Column="2"
+                Width="18"
+                Height="18"
+                IsActive="False" />
             <TextBlock
                 x:Name="CountText"
+                Grid.Column="3"
                 VerticalAlignment="Center"
-                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-        </StackPanel>
+                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                TextTrimming="CharacterEllipsis" />
+        </Grid>
 
         <Border
             Grid.Row="2"
@@ -50,18 +206,18 @@
                     <RowDefinition Height="*" />
                 </Grid.RowDefinitions>
 
-                <!-- Header -->
+                <!-- Header for the wide table; hidden in the compact layout. -->
                 <Grid
                     x:Name="HeaderGrid"
                     Grid.Row="0"
                     Padding="12,6"
                     ColumnSpacing="10">
                     <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="3*" />
                         <ColumnDefinition Width="2*" />
-                        <ColumnDefinition Width="2*" />
-                        <ColumnDefinition Width="100" />
-                        <ColumnDefinition Width="100" />
                         <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="90" />
+                        <ColumnDefinition Width="80" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <TextBlock Grid.Column="0" Style="{StaticResource TableHeader}" Text="APP" />
@@ -83,87 +239,14 @@
                 <ListView
                     x:Name="AppsList"
                     Grid.Row="1"
-                    SelectionMode="None">
+                    SelectionMode="None"
+                    ItemTemplate="{StaticResource TableRowTemplate}">
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="Padding" Value="12,4" />
                         </Style>
                     </ListView.ItemContainerStyle>
-                    <ListView.ItemTemplate>
-                        <DataTemplate x:DataType="services:LibraryApp">
-                            <Grid ColumnSpacing="10" MinHeight="48">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="2*" />
-                                    <ColumnDefinition Width="2*" />
-                                    <ColumnDefinition Width="100" />
-                                    <ColumnDefinition Width="100" />
-                                    <ColumnDefinition Width="90" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <StackPanel
-                                    Grid.Column="0"
-                                    Orientation="Horizontal"
-                                    Spacing="10"
-                                    VerticalAlignment="Center">
-                                    <Image
-                                        x:Name="RowIcon"
-                                        Width="28"
-                                        Height="28"
-                                        Stretch="Uniform"
-                                        Loaded="RowIcon_Loaded"
-                                        Tag="{x:Bind Icon}" />
-                                    <TextBlock
-                                        VerticalAlignment="Center"
-                                        FontWeight="SemiBold"
-                                        Text="{x:Bind DisplayName}"
-                                        TextTrimming="CharacterEllipsis" />
-                                </StackPanel>
-
-                                <TextBlock
-                                    Grid.Column="1"
-                                    Style="{StaticResource TableCell}"
-                                    FontFamily="Cascadia Mono, Consolas"
-                                    FontSize="11"
-                                    Text="{x:Bind BundleId}" />
-
-                                <TextBlock
-                                    Grid.Column="2"
-                                    Style="{StaticResource TableCell}"
-                                    Text="{x:Bind InstalledText}" />
-
-                                <TextBlock
-                                    Grid.Column="3"
-                                    Style="{StaticResource TableCell}"
-                                    Text="{x:Bind ExpiresText}" />
-
-                                <TextBlock
-                                    Grid.Column="4"
-                                    Style="{StaticResource TableCell}"
-                                    Text="{x:Bind TimeLeftText}" />
-
-                                <StackPanel
-                                    Grid.Column="5"
-                                    Orientation="Horizontal"
-                                    Spacing="6"
-                                    VerticalAlignment="Center">
-                                    <Button
-                                        Content="Refresh"
-                                        Tag="{x:Bind BundleId}"
-                                        Click="RefreshOne_Click" />
-                                    <Button
-                                        Content="Uninstall"
-                                        Tag="{x:Bind BundleId}"
-                                        Click="Uninstall_Click" />
-                                    <Button
-                                        Content="Forget"
-                                        Tag="{x:Bind BundleId}"
-                                        Click="Forget_Click" />
-                                </StackPanel>
-                            </Grid>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
                 </ListView>
             </Grid>
         </Border>

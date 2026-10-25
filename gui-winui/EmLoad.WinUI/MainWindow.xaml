@@ -36,10 +36,11 @@
             Grid.Row="1"
             IsBackButtonVisible="Collapsed"
             IsSettingsVisible="False"
-            PaneDisplayMode="Left"
+            PaneDisplayMode="Auto"
             OpenPaneLength="212"
             IsPaneToggleButtonVisible="True"
-            SelectionChanged="Nav_SelectionChanged">
+            SelectionChanged="Nav_SelectionChanged"
+            DisplayModeChanged="Nav_DisplayModeChanged">
 
             <NavigationView.MenuItems>
                 <NavigationViewItem Content="Devices" Tag="devices">

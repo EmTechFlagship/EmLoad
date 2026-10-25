@@ -53,6 +53,7 @@ public sealed partial class MainWindow : Window
         if (Content is FrameworkElement root)
         {
             root.Loaded += MainWindow_Loaded;
+            root.Loaded += (_, _) => UpdatePaneFooter(Nav.DisplayMode);
         }
     }
 
@@ -109,6 +110,22 @@ public sealed partial class MainWindow : Window
     // ------------------------------------------------------------------ //
     // Navigation
     // ------------------------------------------------------------------ //
+    private void Nav_DisplayModeChanged(NavigationView sender, NavigationViewDisplayModeChangedEventArgs args)
+    {
+        UpdatePaneFooter(args.DisplayMode);
+    }
+
+    /// <summary>
+    /// Hides the engine badge unless the pane shows labels. The collapsed pane is
+    /// only 48 px wide, which clips the badge down to "emlo…".
+    /// </summary>
+    private void UpdatePaneFooter(NavigationViewDisplayMode mode)
+    {
+        EngineBadge.Visibility = mode == NavigationViewDisplayMode.Expanded
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+    }
+
     private void Nav_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
         if (args.SelectedItem is not NavigationViewItem item)

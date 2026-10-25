@@ -40,6 +40,11 @@ public sealed record LibraryApp(
         < 1 => $"{Math.Max(0, (int)(DaysLeft!.Value * 24))}h left",
         _ => $"{DaysLeft:F1}d left",
     };
+
+    /// <summary>One-line expiry summary for the narrow (stacked) row layout.</summary>
+    public string CompactStatus => ExpiresAt is null
+        ? "no expiry recorded"
+        : $"expires {ExpiresText} · {TimeLeftText}";
 }
 
 public sealed record DoctorCheck(string Name, string Status, string Message)
