@@ -1,0 +1,319 @@
+# ---------------------------------------------------------------------------
+# EmLoad release build.
+#
+# Cutting a release is one tag:
+#
+#   git tag v0.1.0-beta1
+#   git push origin v0.1.0-beta1
+#
+# The tag name drives every version string in the build:
+#
+#   v0.1.0-beta1  ->  version 0.1.0
+#                     channel "Beta 1"      (installer UI, Apps list)
+#                     file tag 0.1.0-beta1  (EmLoad-Setup-0.1.0-beta1.exe)
+#                     Python  0.1.0b1       (pyproject.toml, emload/__init__.py)
+#
+# "Actions -> Release -> Run workflow" does the same without pushing a tag,
+# and lets you build an offline variant or skip publishing.
+#
+# Artifacts are always uploaded to the run; the GitHub release is created only
+# for tag pushes (or when the manual run has "publish" ticked).
+# ---------------------------------------------------------------------------
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version, e.g. 0.1.0'
+        required: true
+        default: '0.1.0'
+      channel:
+        description: 'Channel label, e.g. "Beta 1" (empty for a final release)'
+        required: false
+        default: 'Beta 1'
+      tag:
+        description: 'Tag to publish (defaults to v<version>-<slug>)'
+        required: false
+      offline:
+        description: 'Bundle every wheel so the installers work without internet'
+        type: boolean
+        default: false
+      publish:
+        description: 'Create the GitHub release'
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+# Never let two runs publish the same tag at once.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: '1'
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  PIP_DISABLE_PIP_VERSION_CHECK: '1'
+
+jobs:
+  release:
+    name: Build and publish
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out the tag
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.txt
+
+      # The build script auto-detects Inno Setup 6/7; 7.1.0 is the version the
+      # installers were developed against, so pin it instead of taking whatever
+      # the runner image ships.
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $setup = Join-Path $env:RUNNER_TEMP 'innosetup.exe'
+          $url = 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe'
+          Write-Host "Downloading $url"
+          Invoke-WebRequest -Uri $url -OutFile $setup -UseBasicParsing
+          $proc = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/SP-'
+          )
+          if ($proc.ExitCode -ne 0) {
+            throw "Inno Setup installer failed with exit code $($proc.ExitCode)."
+          }
+          $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 7\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC.exe not found at $iscc." }
+          Write-Host "ISCC: $iscc"
+
+      - name: Resolve version from the tag
+        id: version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_TAG: ${{ inputs.tag }}
+        run: |
+          # "beta1" -> "Beta 1", "rc2" -> "RC 2", "preview3" -> "Preview 3".
+          function ConvertTo-ChannelLabel {
+            param([string]$Slug)
+
+            if (-not $Slug) { return '' }
+            $text = ($Slug -replace '[-._]', ' ') -replace '(?<=[A-Za-z])(?=[0-9])', ' '
+            $words = foreach ($word in ($text -split '\s+' | Where-Object { $_ })) {
+              if ($word -match '^(?i)rc$') { 'RC' }
+              else { $word.Substring(0, 1).ToUpperInvariant() + $word.Substring(1).ToLowerInvariant() }
+            }
+            return ($words -join ' ')
+          }
+
+          $tag = $null
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $tag = $env:GITHUB_REF_NAME
+          }
+          elseif ($env:INPUT_TAG) {
+            $tag = $env:INPUT_TAG
+          }
+
+          $slug = ''
+          if ($tag) {
+            if ($tag -notmatch '^v?(?<version>[0-9]+\.[0-9]+\.[0-9]+)(?:-(?<slug>[0-9A-Za-z][0-9A-Za-z.-]*))?$') {
+              throw "Tag '$tag' is not in the v<major>.<minor>.<patch>[-<channel>] form."
+            }
+            $version = $Matches['version']
+            $slug = $Matches['slug']
+            $channel = ConvertTo-ChannelLabel $slug
+          }
+          else {
+            $version = $env:INPUT_VERSION
+            if ($version -notmatch '^[0-9]+\.[0-9]+\.[0-9]+$') {
+              throw "Version '$version' must look like 0.1.0."
+            }
+            $channel = $env:INPUT_CHANNEL
+            $slug = ($channel -replace '[^0-9A-Za-z]', '').ToLowerInvariant()
+            $tag = "v$version"
+            if ($slug) { $tag = "$tag-$slug" }
+          }
+
+          # PEP 440: 0.1.0-beta1 -> 0.1.0b1. Packaging normalizes long forms too,
+          # but the short aliases keep the reported version tidy.
+          $pepSlug = ($slug -replace '[-.]', '') -replace '(?i)^alpha', 'a' -replace '(?i)^beta', 'b'
+          $pythonVersion = "$version$pepSlug"
+
+          $outputTag = $version
+          if ($slug) { $outputTag = "$version-$slug" }
+
+          $values = [ordered]@{
+            version   = $version
+            channel   = $channel
+            slug      = $slug
+            tag       = $tag
+            outputtag = $outputTag
+            python    = $pythonVersion
+          }
+          foreach ($key in $values.Keys) {
+            Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "$key=$($values[$key])" -Encoding utf8
+            Write-Host ("{0,-10} {1}" -f $key, $values[$key])
+          }
+
+      # The installer ships the engine source, and the app reports __version__.
+      # Keep the two files in step with the tag instead of editing them by hand.
+      - name: Sync the Python version
+        shell: pwsh
+        env:
+          PYTHON_VERSION: ${{ steps.version.outputs.python }}
+        run: |
+          $initPath = 'emload/__init__.py'
+          $initText = [System.IO.File]::ReadAllText((Resolve-Path $initPath))
+          $initText = [regex]::Replace($initText, '(?m)^__version__ = "[^"]*"', "__version__ = `"$env:PYTHON_VERSION`"")
+          [System.IO.File]::WriteAllText((Resolve-Path $initPath), $initText)
+
+          $projectPath = 'pyproject.toml'
+          $projectText = [System.IO.File]::ReadAllText((Resolve-Path $projectPath))
+          $projectText = [regex]::Replace($projectText, '(?m)^version = "[^"]*"', "version = `"$env:PYTHON_VERSION`"")
+          [System.IO.File]::WriteAllText((Resolve-Path $projectPath), $projectText)
+
+          $found = @(Select-String -Path $initPath, $projectPath -Pattern ([regex]::Escape($env:PYTHON_VERSION)))
+          if ($found.Count -lt 2) { throw 'Could not write the version into emload/__init__.py and pyproject.toml.' }
+          Write-Host "Python version set to $env:PYTHON_VERSION"
+
+      - name: Run the test suite
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+          python -m pytest -q
+
+      - name: Build the installers
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
+          OUTPUT_TAG: ${{ steps.version.outputs.outputtag }}
+          OFFLINE: ${{ inputs.offline }}
+        run: |
+          $arguments = @{ Version = $env:VERSION; OutputTag = $env:OUTPUT_TAG }
+          if ($env:CHANNEL) { $arguments['Prerelease'] = $env:CHANNEL }
+          if ($env:OFFLINE -eq 'true') { $arguments['Offline'] = $true }
+
+          ./installer/build-installer.ps1 @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "build-installer.ps1 failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Write SHA-256 checksums
+        shell: pwsh
+        run: |
+          $files = @(Get-ChildItem -LiteralPath dist -File |
+            Where-Object { $_.Extension -in '.exe', '.zip' } | Sort-Object Name)
+          if (-not $files) { throw 'The build produced no artifacts.' }
+
+          $lines = foreach ($file in $files) {
+            '{0}  {1}' -f (Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant(), $file.Name
+          }
+          Set-Content -LiteralPath dist/SHA256SUMS.txt -Value $lines -Encoding ascii
+          Get-Content -LiteralPath dist/SHA256SUMS.txt
+
+      - name: Upload the build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: emload-${{ steps.version.outputs.outputtag }}
+          path: |
+            dist/*.exe
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish the GitHub release
+        if: github.event_name == 'push' || github.event.inputs.publish == 'true'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.version.outputs.tag }}
+          VERSION: ${{ steps.version.outputs.version }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
+          OUTPUT_TAG: ${{ steps.version.outputs.outputtag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          $title = "EmLoad $env:VERSION $env:CHANNEL".Trim()
+
+          # An array rather than a here-string: a PowerShell here-string's
+          # closing marker cannot be indented inside this YAML block.
+          $notes = @(
+            'Sideload iOS apps with a free Apple ID.'
+            ''
+            '## Install'
+            ''
+            '| File | What you get |'
+            '| --- | --- |'
+            ('| `EmLoad-Setup-{0}.exe` | WinUI 3 desktop app + Python engine |' -f $env:OUTPUT_TAG)
+            ('| `EmLoad-Cli-Setup-{0}.exe` | `emload` on your PATH (plus `emload gui`) |' -f $env:OUTPUT_TAG)
+            ('| `EmLoad-{0}-win-x64.zip` | Portable folder, no installer - run `First-Run.cmd` |' -f $env:OUTPUT_TAG)
+            ''
+            'Both installers are **per-user**: no admin rights, no machine-wide changes.'
+            'They need **Python 3.10 or newer** from python.org (the Microsoft Store stub'
+            'cannot create a virtual environment) and an internet connection while the'
+            'installer fetches the packages.'
+            ''
+            'After installing, open a new terminal:'
+            ''
+            '```powershell'
+            'emload setup     # download zsign (required for signing)'
+            'emload doctor    # check the environment'
+            '```'
+            ''
+            "See [installer/README.md](https://github.com/$env:REPOSITORY/blob/$env:TAG/installer/README.md) for build and troubleshooting notes."
+            ''
+            'The binaries are not code-signed, so SmartScreen will warn on first run.'
+            'Check the download against `SHA256SUMS.txt`.'
+          ) -join "`n"
+
+          $notesPath = Join-Path $env:RUNNER_TEMP 'release-notes.md'
+          Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8
+
+          $assets = @(Get-ChildItem -LiteralPath dist -File |
+            Where-Object { $_.Extension -in '.exe', '.zip' } | ForEach-Object FullName)
+          $assets += (Resolve-Path -LiteralPath 'dist/SHA256SUMS.txt').Path
+
+          # A channel label means a pre-release (Beta 1, RC 2, ...); a bare
+          # version like 2.0.0 is a final release and becomes "latest".
+          $releaseFlags = @()
+          if ($env:CHANNEL) { $releaseFlags += '--prerelease' }
+
+          gh release view $env:TAG --json tagName 2>$null | Out-Null
+          if ($LASTEXITCODE -eq 0) {
+            Write-Host "Updating the existing release $env:TAG."
+            gh release upload $env:TAG @assets --clobber
+            if ($LASTEXITCODE -ne 0) { throw "gh release upload failed with exit code $LASTEXITCODE." }
+            gh release edit $env:TAG --title $title --notes-file $notesPath @releaseFlags
+          }
+          else {
+            Write-Host "Creating release $env:TAG."
+            $arguments = @($env:TAG) + $assets + @('--title', $title, '--notes-file', $notesPath) + $releaseFlags
+            # Only a manual run can point at a tag that does not exist yet.
+            if ($env:GITHUB_REF_TYPE -ne 'tag') { $arguments += @('--target', $env:GITHUB_SHA) }
+            gh release create @arguments
+          }
+          if ($LASTEXITCODE -ne 0) { throw "Publishing the release failed with exit code $LASTEXITCODE." }
+
+          Write-Host ''
+          Write-Host "Release: https://github.com/$env:REPOSITORY/releases/tag/$env:TAG"

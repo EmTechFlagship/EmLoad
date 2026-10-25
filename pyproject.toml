@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "emload"
-version = "0.1.0"
+version = "0.1.0b1"
 description = "Sideload iOS apps with a free Apple ID - CLI plus a PySide6 desktop app (AltServer-style)"
 readme = "README.md"
 requires-python = ">=3.10"

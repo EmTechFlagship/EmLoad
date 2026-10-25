@@ -4,6 +4,10 @@ venv/
 env/
 ENV/
 
+# Installer build output
+installer/stage/
+installer/build.defines.iss
+
 # IDE / editor
 .vscode/
 .idea/

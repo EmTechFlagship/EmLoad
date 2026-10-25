@@ -34,4 +34,16 @@
     </Content>
   </ItemGroup>
 
+  <!-- Unpackaged publish drops EmLoad.WinUI.pri, the app's XAML resource
+       index. Without it WinUI fails to resolve resources and the process
+       exits with 0xc000027b (STATUS_STOWED_EXCEPTION) on startup. -->
+  <Target Name="IncludePriFileInPublish" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <ResolvedFileToPublish Include="$(TargetDir)$(TargetName).pri">
+        <RelativePath>$(TargetName).pri</RelativePath>
+        <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+      </ResolvedFileToPublish>
+    </ItemGroup>
+  </Target>
+
 </Project>

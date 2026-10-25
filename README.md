@@ -72,8 +72,43 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
 
 ## Install
 
+### Windows installer (recommended)
+
+Download these from the **0.1.0 Beta 1** release:
+
+| File | What you get |
+| --- | --- |
+| `EmLoad-Setup-0.1.0-beta1.exe` | WinUI 3 desktop app + Python engine |
+| `EmLoad-Cli-Setup-0.1.0-beta1.exe` | `emload` on your PATH (plus `emload gui` if you keep PySide6) |
+| `EmLoad-0.1.0-beta1-win-x64.zip` | Portable folder, no installer — run `First-Run.cmd` |
+
+Both installers are **per-user and need no admin rights**. They install to
+`%LOCALAPPDATA%\Programs\EmLoad` (desktop) or `...\EmLoad CLI`, create a private
+virtual environment there, and install `requirements.txt` into it. That means:
+
+- **Python 3.10+ must already be installed** — use the
+  [python.org](https://www.python.org/downloads/windows/) build, not the
+  Microsoft Store stub. The installer finds `py -3.12`/`python`/registry
+  installs automatically and prefers 3.12/3.13.
+- The desktop installer skips the optional PySide6 GUI (~150 MB) unless you
+  tick it; the CLI installer includes it by default.
+- An internet connection is needed while the installer fetches the packages
+  (build with `-Offline` to carry a wheelhouse instead).
+
+After installing, run once from a terminal:
+
 ```powershell
-git clone https://github.com/yourname/EmLoadServer
+emload setup        # downloads zsign (required for signing)
+emload doctor       # check your environment
+```
+
+Uninstall from **Settings → Apps**. Your Apple ID sign-in, certificates and
+install history in `%LOCALAPPDATA%\EmLoad` are kept.
+
+### From source
+
+```powershell
+git clone https://github.com/EmTechFlagship/EmLoadServer
 cd EmLoadServer
 py -3.12 -m venv .venv
 .\.venv\Scripts\python -m pip install -e .          # CLI + engine
@@ -82,8 +117,19 @@ emload setup        # downloads zsign (required for signing)
 emload doctor       # check your environment
 ```
 
-> Installing PySide6 only adds the GUI; the CLI works without it via
+> Installing PySide6 only adds the PySide6 GUI; the CLI works without it via
 > `pip install -e .` alone.
+
+### Building the installers
+
+```powershell
+powershell -File installer\build-installer.ps1
+```
+
+Releases are built by CI: push a tag such as `v0.1.0-beta1` and
+`.github/workflows/release.yml` builds the three artifacts and publishes them
+as a GitHub release. See [installer/README.md](installer/README.md) for the
+version knobs, offline builds and how the engine bootstrap works.
 
 ## CLI
 
