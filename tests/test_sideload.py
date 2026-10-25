@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 from emload import sideload
 
@@ -34,11 +34,14 @@ def test_deep_ipa_tries_a_short_windows_scratch_folder(monkeypatch, tmp_path):
     monkeypatch.setattr(sideload.os, "name", "nt")
     monkeypatch.setattr(sideload.tempfile, "gettempdir", lambda: r"C:\\Users\\Test\\AppData\\Local\\Temp")
     monkeypatch.setenv("SystemRoot", r"C:\\Windows")
+    # pathlib refuses to instantiate WindowsPath on POSIX, so build the Windows
+    # candidates with the pure variant. This test never touches them on disk.
+    monkeypatch.setattr(sideload, "Path", PureWindowsPath)
 
     roots = sideload._scratch_roots(tmp_path / "a-long-output-folder", deepest=200)
 
-    assert roots[0] == Path(r"C:\\eml")
-    assert Path(r"C:\\Windows\\Temp") in roots
+    assert roots[0] == PureWindowsPath(r"C:\\eml")
+    assert PureWindowsPath(r"C:\\Windows\\Temp") in roots
 
 
 def test_signed_status_and_clean(tmp_path):

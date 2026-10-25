@@ -132,14 +132,29 @@ def _check_usbmux() -> dict[str, Any]:
             "message": "running, but no device is connected",
         }
     except Exception as exc:  # noqa: BLE001 - report, don't crash
+        if sys.platform == "darwin":
+            hint = (
+                "could not reach usbmuxd. Plug the iPhone in, unlock it, and tap "
+                "\"Trust This Computer\". macOS normally starts the Apple Mobile "
+                "Device service automatically; if it is missing, install Xcode or "
+                "Apple Configurator from the App Store."
+            )
+        elif os.name == "nt":
+            hint = (
+                "could not reach the Apple Mobile Device Service (usbmuxd). "
+                "Install Apple Devices or iTunes from the Microsoft Store, then "
+                "retry."
+            )
+        else:
+            hint = (
+                "could not reach usbmuxd. Install usbmuxd/libimobiledevice "
+                "(for example 'sudo apt install usbmuxd libimobiledevice6') and "
+                "make sure the daemon is running."
+            )
         return {
             "name": "Device service",
             "status": "error",
-            "message": (
-                "could not reach the Apple Mobile Device Service (usbmuxd). "
-                "Install Apple Devices or iTunes from the Microsoft Store, then "
-                f"retry. ({exc})"
-            ),
+            "message": f"{hint} ({exc})",
         }
 
 

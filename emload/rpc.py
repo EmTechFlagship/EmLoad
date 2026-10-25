@@ -129,6 +129,7 @@ def _settings_get() -> dict[str, Any]:
         "connection": config.get("connection", "auto"),
         "signed_dir": config.get("signed_dir", ""),
         "keep_signed": bool(config.get("keep_signed")),
+        "emstore_server": bool(config.get("emstore_server")),
         "data_dir": str(paths.data_dir()),
         "config_file": str(paths.config_file()),
     }
@@ -150,6 +151,8 @@ def _settings_set(patch: dict[str, Any]) -> dict[str, Any]:
         config["signed_dir"] = str(patch["signed_dir"] or "")
     if "keep_signed" in patch:
         config["keep_signed"] = bool(patch["keep_signed"])
+    if "emstore_server" in patch:
+        config["emstore_server"] = bool(patch["emstore_server"])
     _write_config(config)
     return _settings_get()
 
@@ -188,6 +191,8 @@ class Handlers:
         self._watch_lock = threading.Lock()
         self._known_serials: set[str] = set()
         self._attach_lock = threading.Lock()
+        self._emstore_lock = threading.Lock()
+        self._emstore_busy: set[str] = set()
         # usbmux emits from inside its own event loop, where lockdown calls
         # (which use asyncio.run) are illegal -- so device events are handled
         # here instead of on the watcher thread.
@@ -277,6 +282,127 @@ class Handlers:
             self._w.send({"event": "provision.result", "udid": serial, "result": _as_dict(result)})
         except Exception as exc:  # noqa: BLE001 - best effort
             self._w.send({"event": "log", "message": f"Could not provision {serial}: {exc}"})
+
+        if _read_config().get("emstore_server"):
+            self._schedule_emstore(serial)
+
+    # -- EmSideStore (AltServer-style SideStore auto-install) ---------------- #
+    def _schedule_emstore(self, serial: str, *, force: bool = False) -> None:
+        """Install/refresh SideStore for one device on a background thread."""
+        with self._emstore_lock:
+            if serial in self._emstore_busy:
+                return
+            self._emstore_busy.add(serial)
+
+        def run() -> None:
+            from . import server
+
+            settings = _settings_get()
+            try:
+                result = server.ensure_installed(
+                    serial,
+                    force=force,
+                    keep_signed=bool(settings.get("keep_signed")),
+                    signed_dir=settings.get("signed_dir") or None,
+                )
+                if result.get("status") == "already_installed":
+                    refreshed = server.refresh_sidestore_if_due(serial)
+                    if refreshed is not None:
+                        result = {**refreshed, "status": "refreshed"}
+                self._w.send({
+                    "event": "emstore.result",
+                    "udid": serial,
+                    "result": _as_dict(result),
+                })
+            except Exception as exc:  # noqa: BLE001 - surfaced in the UI, not fatal
+                self._w.send({
+                    "event": "emstore.result",
+                    "udid": serial,
+                    "result": {"status": "error", "error": str(exc)},
+                })
+            finally:
+                with self._emstore_lock:
+                    self._emstore_busy.discard(serial)
+
+        threading.Thread(
+            target=run, name=f"emload-emstore-{serial[:8]}", daemon=True
+        ).start()
+
+    def emstore_status(self, _params: dict[str, Any]) -> dict[str, Any]:
+        """Sign-in state, local SideStore IPAs, and per-device install state."""
+        from . import server
+
+        payload: dict[str, Any] = {
+            "bundle_id": server.SIDESTORE_BUNDLE_ID,
+            "repo": server.SIDESTORE_REPO,
+            "account": gsa.status(),
+            "ipa": [str(path) for path in server.local_candidates()],
+            "devices": [],
+        }
+        seen: set[str] = set()
+        for entry in _enrich(device.list_devices()):
+            serial = str(entry.get("serial") or "")
+            if not serial or serial in seen:
+                continue
+            seen.add(serial)
+            info = entry.get("info") or {}
+            row: dict[str, Any] = {
+                "udid": serial,
+                "name": info.get("DeviceName"),
+                "connection": entry.get("connection_type"),
+                "emstore_installed": False,
+                "emstore_version": None,
+            }
+            try:
+                present = apps.list_installed(serial).get(payload["bundle_id"])
+                row["emstore_installed"] = present is not None
+                if present:
+                    row["emstore_version"] = present.get("version")
+            except Exception:  # noqa: BLE001 - unpaired devices can't be read
+                row["emstore_installed"] = None
+            payload["devices"].append(row)
+        return payload
+
+    def emstore_install(self, params: dict[str, Any], progress: Callable[..., None]) -> dict[str, Any]:
+        """Install (or refresh) SideStore on one device, or every connected one."""
+        from . import server
+
+        serials = (
+            [str(params["udid"])]
+            if params.get("udid")
+            else server.distinct_serials(device.list_devices())
+        )
+        if not serials:
+            raise EmLoadError("No device connected; plug in an iPhone (or pass a UDID).")
+
+        settings = _settings_get()
+        keep_signed = bool(params.get("keepSigned", settings.get("keep_signed")))
+        signed_dir = params.get("signedDir") or settings.get("signed_dir") or None
+        results: list[dict[str, Any]] = []
+        failed = 0
+        for serial in serials:
+            try:
+                result = server.ensure_installed(
+                    serial,
+                    ipa=params.get("ipa") or None,
+                    download=bool(params.get("download")),
+                    channel=params.get("channel") or None,
+                    force=bool(params.get("force")),
+                    keep_signed=keep_signed,
+                    signed_dir=signed_dir,
+                    on_progress=progress,
+                )
+                if result.get("status") == "already_installed":
+                    refreshed = server.refresh_sidestore_if_due(
+                        serial, on_progress=progress
+                    )
+                    if refreshed is not None:
+                        result = {**refreshed, "status": "refreshed"}
+                results.append(result)
+            except EmLoadError as exc:
+                failed += 1
+                results.append({"udid": serial, "status": "error", "error": str(exc)})
+        return {"results": results, "failed": failed}
 
     # -- sideload ---------------------------------------------------------- #
     def ipa_inspect(self, params: dict[str, Any]) -> dict[str, Any]:
@@ -437,6 +563,7 @@ def _nugget_apply(udid: str, options: dict[str, Any], progress: Callable[..., No
 _STREAMING = {
     "sideload.run": "sideload_run",
     "library.refresh": "library_refresh",
+    "emstore.install": "emstore_install",
     "nugget.apply": "nugget_apply",
     "nugget.respring": "nugget_respring",
 }
@@ -471,6 +598,8 @@ _METHODS = {
     "signing.download": "signing_download",
     "signed.status": "signed_status",
     "signed.clean": "signed_clean",
+    "emstore.status": "emstore_status",
+    "emstore.install": "emstore_install",
     "nugget.schema": "nugget_schema",
     "nugget.set": "nugget_set",
     "nugget.apply": "nugget_apply",

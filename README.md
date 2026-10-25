@@ -62,7 +62,7 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
 
 ## Requirements
 
-- Windows 10/11, macOS, or Linux
+- Windows 10/11, Linux, or an Apple silicon Mac (native macOS app)
 - Python 3.10+ (3.12 recommended — `pymobiledevice3` needs prebuilt wheels)
 - Apple **Devices** (or iTunes) from the Microsoft Store on Windows — that's what
   provides the USB/`usbmuxd` service
@@ -250,6 +250,41 @@ The desktop app has a sidebar with seven pages:
 - **Account** — Apple ID sign-in with a 2FA-aware dialog
 - **Settings** — connection preference, signed-IPA folder, zsign download
 - **Diagnostics** — `doctor` results rendered
+
+### macOS app (SwiftUI)
+
+`gui-macos/` is a native SwiftUI shell that drives the same Python engine over
+the newline-delimited JSON-RPC bridge (`emload rpc`). It is not a second
+implementation: sideloading, provisioning, signing, refresh and the Misc tweak
+schema all stay in Python.
+
+On **macOS 26 (Tahoe) or newer** the window, sidebar selection, cards and
+primary buttons use **Liquid Glass** (`NSGlassEffectView` / `.glassEffect`),
+with the desktop visible through the window backdrop. macOS 13–15 get the same
+layout with `NSVisualEffectView` and `.ultraThinMaterial` instead, and
+**Reduce Transparency** falls back to a solid window. The app requires an
+Apple silicon Mac and macOS 13+; Intel Macs are not supported because zsign
+does not publish an Intel macOS build.
+
+```bash
+# 1. Install the Python engine and its dependencies (once)
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m emload setup      # downloads zsign for macOS
+.venv/bin/python -m emload doctor
+
+# 2. Build EmLoad.app
+./gui-macos/scripts/build-app.sh      # -> gui-macos/dist/EmLoad.app
+open gui-macos/dist/EmLoad.app
+```
+
+The app looks for Python in this order: `EMLOAD_PYTHON`, a venv under
+`EMLOAD_ROOT`, the checkout it was built from (recorded in
+`Contents/Resources/engine-root.txt`), the engine copied into
+`Contents/Resources/engine`, common checkout locations, then `python3` on
+`PATH`. The bundled engine source still needs a Python with
+`requirements.txt` installed; see [gui-macos/README.md](gui-macos/README.md)
+for details and troubleshooting.
 
 ## How it works
 

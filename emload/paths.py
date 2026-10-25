@@ -15,6 +15,27 @@ from pathlib import Path
 APP_NAME = "EmLoad"
 
 
+def _base_data_dir() -> Path:
+    """The platform's per-user application-data root.
+
+    - Windows: ``%LOCALAPPDATA%``
+    - macOS: ``~/Library/Application Support``
+    - Linux/BSD: ``$XDG_DATA_HOME`` (or ``~/.local/share``)
+
+    ``EMLOAD_DATA_DIR`` overrides the whole location, which is handy for a
+    portable install or for tests that want to keep state beside the app.
+    """
+    override = os.environ.get("EMLOAD_DATA_DIR")
+    if override:
+        return Path(override).expanduser()
+
+    if sys.platform == "darwin":
+        return Path.home() / "Library" / "Application Support"
+    if os.name == "nt":
+        return Path(os.environ.get("LOCALAPPDATA") or (Path.home() / "AppData" / "Local"))
+    return Path(os.environ.get("XDG_DATA_HOME") or (Path.home() / ".local" / "share"))
+
+
 def resource_dir() -> Path:
     """Directory of bundled package resources (certs, etc).
 
@@ -29,10 +50,7 @@ def resource_dir() -> Path:
 
 def data_dir() -> Path:
     """Per-user application data directory (created if missing)."""
-    base = os.environ.get("LOCALAPPDATA") or os.path.join(
-        os.path.expanduser("~"), ".local", "share"
-    )
-    path = Path(base) / APP_NAME
+    path = _base_data_dir() / APP_NAME
     path.mkdir(parents=True, exist_ok=True)
     return path
 

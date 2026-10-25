@@ -38,3 +38,9 @@ vendor/zsign/
 output/
 *.ipa
 *.log
+# Swift Package Manager / macOS app
+gui-macos/.build/
+gui-macos/.swiftpm/
+gui-macos/dist/
+gui-macos/*.xcodeproj/
+*.xcworkspace/

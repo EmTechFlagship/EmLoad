@@ -17,9 +17,11 @@ from __future__ import annotations
 import io
 import json
 import os
+import platform
 import shutil
 import subprocess
 import sys
+import tarfile
 import zipfile
 from pathlib import Path
 from typing import Any
@@ -91,15 +93,27 @@ def resolve_zsign() -> str:
         Path(sys.executable).parent / exe,       # alongside a frozen app
         paths.zsign_file(),                       # downloaded by `emload setup`
     ]
+    # Homebrew is not always on a GUI app's PATH (especially /opt/homebrew/bin),
+    # so check its two standard prefixes explicitly.
+    if sys.platform == "darwin":
+        candidates.extend(
+            Path(prefix) / exe for prefix in ("/opt/homebrew/bin", "/usr/local/bin")
+        )
     for candidate in candidates:
         if candidate.exists():
             return str(candidate)
     found = shutil.which("zsign")
     if found:
         return found
+    if sys.platform == "darwin":
+        raise SigningError(
+            "zsign not found. Run 'emload setup' (it downloads the Apple-silicon "
+            "build or installs Homebrew's zsign), set EM_ZSIGN, or place a zsign "
+            "binary in vendor/."
+        )
     raise SigningError(
         "zsign not found. Run 'emload setup' to download it, set EM_ZSIGN, or "
-        "place zsign.exe in vendor/."
+        "place zsign in vendor/."
     )
 
 
@@ -121,6 +135,7 @@ ZSIGN_DOWNLOAD_URLS: tuple[str, ...] = (
 )
 
 _GITHUB_API = "https://api.github.com/repos/zhlynn/zsign/releases/latest"
+_GITHUB_RELEASES = "https://github.com/zhlynn/zsign/releases"
 
 
 def _latest_zsign_tag() -> str | None:
@@ -136,39 +151,148 @@ def _latest_zsign_tag() -> str | None:
         return None
 
 
-def zsign_download_urls() -> list[str]:
-    """Candidate URLs for a prebuilt Windows zsign, newest release first."""
-    urls: list[str] = []
-    tag = _latest_zsign_tag()
+def _release_url(tag: str | None, asset: str) -> str:
+    """A zsign GitHub release asset URL, using ``latest`` when the tag is unknown."""
     if tag:
-        urls.append(
-            f"https://nightly.link/zhlynn/zsign/workflows/build/{tag}/"
-            "zsign-windows-x64.zip"
+        return f"{_GITHUB_RELEASES}/download/{tag}/{asset}"
+    return f"{_GITHUB_RELEASES}/latest/download/{asset}"
+
+
+def _macos_arch() -> str:
+    """``arm64`` or ``x86_64`` for the running Mac."""
+    machine = platform.machine().lower()
+    return "arm64" if machine in ("arm64", "aarch64") else "x86_64"
+
+
+def zsign_download_urls() -> list[str]:
+    """Candidate URLs for a prebuilt zsign, newest release first.
+
+    zsign publishes a macOS arm64 tarball, Linux tarballs for x86_64/aarch64,
+    and a Windows zip. There is no official Intel-macOS build, so ``emload
+    setup`` falls back to Homebrew there (see :func:`download_zsign`).
+    """
+    tag = _latest_zsign_tag()
+    urls: list[str] = []
+
+    if sys.platform == "darwin":
+        if _macos_arch() == "arm64":
+            urls.append(_release_url(tag, "zsign-macos-arm64.tar.gz"))
+        return urls
+
+    if sys.platform.startswith("linux"):
+        asset = (
+            "zsign-linux-aarch64.tar.gz"
+            if platform.machine().lower() in ("arm64", "aarch64")
+            else "zsign-linux-x86_64.tar.gz"
         )
+        urls.append(_release_url(tag, asset))
+        return urls
+
+    # Windows: a release zip is now published; nightly.link remains the fallback
+    # for tags whose release assets have not finished uploading yet.
+    if tag:
+        urls.append(_release_url(tag, "zsign-windows-x64.zip"))
     urls.extend(ZSIGN_DOWNLOAD_URLS)
     return urls
 
 
+def _extract_zsign(data: bytes, dest: Path) -> None:
+    """Write the zsign binary from a raw, ZIP, or tar.gz response body."""
+    if data[:2] == b"PK":  # a zip - extract the binary
+        with zipfile.ZipFile(io.BytesIO(data)) as zf:
+            target = next(
+                (
+                    n for n in zf.namelist()
+                    if Path(n).name.lower() in ("zsign.exe", "zsign")
+                ),
+                None,
+            )
+            if target is None:
+                raise ValueError("archive contains no zsign binary")
+            dest.write_bytes(zf.read(target))
+        return
+
+    if data[:2] == b"\x1f\x8b":  # tar.gz - read the member into memory
+        with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
+            member = next(
+                (
+                    m for m in tf.getmembers()
+                    if m.isfile() and Path(m.name).name in ("zsign", "zsign-musl")
+                ),
+                None,
+            )
+            if member is None:
+                raise ValueError("archive contains no zsign binary")
+            extracted = tf.extractfile(member)
+            if extracted is None:
+                raise ValueError("archive member could not be read")
+            dest.write_bytes(extracted.read())
+        return
+
+    dest.write_bytes(data)
+
+
+def _install_zsign_with_brew() -> str | None:
+    """Install Homebrew's zsign on macOS and return its path (or None)."""
+    if sys.platform != "darwin":
+        return None
+    brew = next(
+        (
+            str(path)
+            for path in (
+                Path("/opt/homebrew/bin/brew"),
+                Path("/usr/local/bin/brew"),
+            )
+            if path.exists()
+        ),
+        shutil.which("brew"),
+    )
+    if not brew:
+        return None
+    env = {**os.environ, "HOMEBREW_NO_AUTO_UPDATE": "1", "HOMEBREW_NO_ANALYTICS": "1"}
+    try:
+        subprocess.run(
+            [brew, "install", "zsign"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=900,
+            env=env,
+        )
+        prefix = subprocess.run(
+            [brew, "--prefix", "zsign"],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=60,
+            env=env,
+        ).stdout.strip()
+        candidates = [
+            Path(prefix) / "bin" / "zsign",
+            Path("/opt/homebrew/bin/zsign"),
+            Path("/usr/local/bin/zsign"),
+        ]
+        for candidate in candidates:
+            if candidate.exists():
+                return str(candidate)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return None
+
+
 def download_zsign(urls: list[str] | None = None) -> dict[str, Any]:
-    """Download a prebuilt zsign into the data dir; returns a status report."""
+    """Download a prebuilt zsign into the data dir; returns a status report.
+
+    On Intel macOS (where upstream publishes no binary) and as a fallback when
+    every download fails, Homebrew's ``zsign`` formula is tried.
+    """
     attempts: list[str] = []
     dest = paths.zsign_file()
     for url in urls or zsign_download_urls():
         try:
             response = requests.get(url, timeout=120)
             response.raise_for_status()
-            data = response.content
-            if data[:2] == b"PK":  # a zip - extract zsign.exe
-                with zipfile.ZipFile(io.BytesIO(data)) as zf:
-                    names = zf.namelist()
-                    target = next(
-                        (n for n in names if n.lower().endswith("zsign.exe")), None
-                    )
-                    if target is None:
-                        raise ValueError("archive contains no zsign.exe")
-                    dest.write_bytes(zf.read(target))
-            else:
-                dest.write_bytes(data)
+            _extract_zsign(response.content, dest)
             dest.chmod(0o755)
             version = zsign_version()
             if version is None:
@@ -177,10 +301,28 @@ def download_zsign(urls: list[str] | None = None) -> dict[str, Any]:
             return {"status": "ok", "path": str(dest), "version": version, "source": url}
         except Exception as exc:  # noqa: BLE001 - record every source that failed
             attempts.append(f"{url}: {exc}")
+
+    brew_path = _install_zsign_with_brew()
+    if brew_path:
+        version = zsign_version()
+        return {
+            "status": "ok",
+            "path": brew_path,
+            "version": version,
+            "source": "homebrew",
+        }
+
+    detail = "\n  ".join(attempts) if attempts else "no prebuilt binary for this platform"
+    hint = (
+        "On Intel macOS, install it with 'brew install zsign' or build it from "
+        "https://github.com/zhlynn/zsign and set EM_ZSIGN to the binary."
+        if sys.platform == "darwin"
+        else
+        "Build it from https://github.com/zhlynn/zsign and set EM_ZSIGN to the "
+        "binary, or drop it in vendor/."
+    )
     raise SigningError(
-        "Could not download zsign. Tried:\n  " + "\n  ".join(attempts)
-        + "\n\nBuild it from https://github.com/zhlynn/zsign and set EM_ZSIGN "
-        "to the binary, or drop it in vendor/."
+        f"Could not download zsign. Tried:\n  {detail}\n\n{hint}"
     )
 
 
