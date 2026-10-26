@@ -480,6 +480,38 @@ def test_certificate_transfer_fingerprint_matches_tls_certificate(certificate_ht
     assert hashlib.sha256(certificate).hexdigest() == fingerprint
 
 
+def test_certificate_share_returns_the_values_emcontainer_asks_for(tmp_path, monkeypatch):
+    monkeypatch.setattr(server.paths, "tls_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        server.provision, "signing_identity",
+        lambda: (b"private-key", b"certificate", "serial"),
+    )
+    monkeypatch.setattr(server.signing, "build_p12", lambda cert_der, key_pem: b"test-pkcs12")
+    monkeypatch.setattr(server, "lan_ipv4", lambda: "127.0.0.1")
+    monkeypatch.setattr(server, "_certificate_share", None)
+
+    started = server.start_certificate_transfer()
+    try:
+        assert started["running"] is True
+        assert started["url"].startswith("https://127.0.0.1:")
+        assert started["url"].endswith("/api/certificate")
+        assert started["token"]
+        assert len(started["fingerprint"]) == 64
+        again = server.start_certificate_transfer()
+        assert again["token"] == started["token"]
+
+        request = urllib.request.Request(started["url"])
+        request.add_header("Authorization", f"Bearer {started['token']}")
+        with urllib.request.urlopen(
+            request, context=ssl._create_unverified_context(), timeout=10
+        ) as response:
+            body = json.loads(response.read())
+        assert body == {"p12": "dGVzdC1wa2NzMTI=", "password": "EmLoad"}
+    finally:
+        assert server.stop_certificate_transfer() == {"running": False}
+        assert server.certificate_transfer_status() == {"running": False}
+
+
 def test_certificate_transfer_returns_pkcs12_with_valid_token(certificate_httpd):
     httpd, fingerprint = certificate_httpd
 

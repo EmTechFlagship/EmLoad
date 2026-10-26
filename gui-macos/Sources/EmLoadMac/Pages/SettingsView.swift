@@ -15,6 +15,12 @@ struct SettingsView: View {
     @State private var zsignMessage = ""
     @State private var downloadingZsign = false
 
+    @State private var certificateShare: CertificateShare?
+    @State private var certificateMessage = ""
+    @State private var sharingCertificate = false
+    /// 0 = copy the URL next, 1 = token, 2 = fingerprint, 3 = all three copied.
+    @State private var certificateCopyStep = 0
+
     @State private var emstore: EmStoreStatus?
     @State private var installingEmStore = false
     @State private var emstorePhase = ""
@@ -30,6 +36,7 @@ struct SettingsView: View {
 
             connectionCard
             signingCard
+            emContainerCard
             // EmSideStore settings are disabled until further notice. The card
             // and its actions stay in this file, ready to be re-enabled.
             // emstoreCard
@@ -130,6 +137,86 @@ struct SettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private var emContainerCard: some View {
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                SectionLabel("EmContainer")
+
+                Text("Share this Mac's signing certificate with EmContainer. The iPhone and this Mac need to be on the same network. Paste each value into EmContainer's EmLoad Certificate screen; the button copies the next field.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let certificateShare, certificateShare.running {
+                    certificateField("EmLoad HTTPS URL", certificateShare.url, step: 0)
+                    certificateField("EmLoad transfer token", certificateShare.token, step: 1)
+                    certificateField("TLS certificate SHA-256 fingerprint", certificateShare.fingerprint, step: 2)
+
+                    if !certificateMessage.isEmpty {
+                        Text(certificateMessage)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+
+                    HStack(spacing: 8) {
+                        Button(certificateCopyTitle) {
+                            copyNextCertificateField()
+                        }
+                        .emPrimaryButton()
+                        .disabled(certificateCopyStep >= 3)
+
+                        Button("Stop sharing") {
+                            Task { await stopCertificateShare() }
+                        }
+                        .emSecondaryButton()
+                        .disabled(sharingCertificate)
+                    }
+                } else {
+                    if !certificateMessage.isEmpty {
+                        Text(certificateMessage)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    HStack(spacing: 8) {
+                        if sharingCertificate { ProgressView().controlSize(.small) }
+                        Button("Import EmLoad certificate") {
+                            Task { await startCertificateShare() }
+                        }
+                        .emPrimaryButton()
+                        .disabled(sharingCertificate)
+                    }
+                }
+            }
+        }
+    }
+
+    private var certificateCopyTitle: String {
+        switch certificateCopyStep {
+        case 0: return "Copy HTTPS URL"
+        case 1: return "Copy transfer token"
+        case 2: return "Copy fingerprint"
+        default: return "Pasted into EmContainer"
+        }
+    }
+
+    private func certificateField(_ title: String, _ value: String, step: Int) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title)
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(certificateCopyStep == step ? Color.accentColor : .secondary)
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(value)
+                    .font(.system(size: 11, design: .monospaced))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Button("Copy") { copyCertificateValue(value, advanceTo: step + 1) }
+                    .emSecondaryButton()
             }
         }
     }
@@ -265,6 +352,7 @@ struct SettingsView: View {
         apply(state.settings)
         loaded = true
         await refreshZsign()
+        await refreshCertificateShare()
         // EmSideStore is disabled until further notice.
         // await refreshEmStore()
     }
@@ -357,6 +445,76 @@ struct SettingsView: View {
         await refreshEmStore()
     }
 
+    private func refreshCertificateShare() async {
+        do {
+            let raw = try await state.call("certificate.transfer.status")
+            let share = CertificateShare(dictionary: JSON.dict(raw) ?? [:])
+            certificateShare = share.running ? share : nil
+        } catch {
+            certificateMessage = error.localizedDescription
+        }
+    }
+
+    private func startCertificateShare() async {
+        sharingCertificate = true
+        state.setBusy(true, "Sharing certificate…")
+        defer {
+            sharingCertificate = false
+            state.setBusy(false)
+        }
+        do {
+            let raw = try await state.call("certificate.transfer.start")
+            let share = CertificateShare(dictionary: JSON.dict(raw) ?? [:])
+            certificateShare = share
+            certificateCopyStep = 0
+            copyCertificateValue(share.url, advanceTo: 1)
+            certificateMessage = "HTTPS URL copied. Paste it into EmContainer, then copy the token and fingerprint."
+            state.statusMessage = "Certificate ready for EmContainer"
+        } catch {
+            certificateMessage = error.localizedDescription
+            state.report(error)
+        }
+    }
+
+    private func stopCertificateShare() async {
+        sharingCertificate = true
+        defer { sharingCertificate = false }
+        do {
+            _ = try await state.call("certificate.transfer.stop")
+            certificateShare = nil
+            certificateCopyStep = 0
+            certificateMessage = ""
+            state.statusMessage = "Stopped sharing the certificate"
+        } catch {
+            certificateMessage = error.localizedDescription
+            state.report(error)
+        }
+    }
+
+    private func copyNextCertificateField() {
+        guard let certificateShare else { return }
+        switch certificateCopyStep {
+        case 0:
+            copyCertificateValue(certificateShare.url, advanceTo: 1)
+            certificateMessage = "HTTPS URL copied. Paste it into EmContainer."
+        case 1:
+            copyCertificateValue(certificateShare.token, advanceTo: 2)
+            certificateMessage = "Transfer token copied. Paste it into EmContainer."
+        case 2:
+            copyCertificateValue(certificateShare.fingerprint, advanceTo: 3)
+            certificateMessage = "Fingerprint copied. Paste it, then tap Import certificate from EmLoad."
+        default:
+            break
+        }
+    }
+
+    private func copyCertificateValue(_ value: String, advanceTo step: Int) {
+        let pasteboard = NSPasteboard.general
+        pasteboard.clearContents()
+        pasteboard.setString(value, forType: .string)
+        certificateCopyStep = step
+    }
+
     private func chooseSignedFolder() {
         let panel = NSOpenPanel()
         panel.canChooseDirectories = true
@@ -375,5 +533,19 @@ struct SettingsView: View {
     private func openFolder(_ path: String) {
         guard !path.isEmpty else { return }
         NSWorkspace.shared.open(URL(fileURLWithPath: path))
+    }
+}
+
+private struct CertificateShare {
+    let running: Bool
+    let url: String
+    let token: String
+    let fingerprint: String
+
+    init(dictionary: [String: Any]) {
+        running = JSON.bool(dictionary["running"]) ?? false
+        url = JSON.string(dictionary["url"]) ?? ""
+        token = JSON.string(dictionary["token"]) ?? ""
+        fingerprint = JSON.string(dictionary["fingerprint"]) ?? ""
     }
 }

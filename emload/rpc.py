@@ -516,6 +516,21 @@ class Handlers:
     def signing_download(self, _params: dict[str, Any]) -> dict[str, Any]:
         return _as_dict(signing.download_zsign())
 
+    def certificate_transfer_status(self, _params: dict[str, Any]) -> dict[str, Any]:
+        from . import server
+
+        return server.certificate_transfer_status()
+
+    def certificate_transfer_start(self, _params: dict[str, Any]) -> dict[str, Any]:
+        from . import server
+
+        return server.start_certificate_transfer()
+
+    def certificate_transfer_stop(self, _params: dict[str, Any]) -> dict[str, Any]:
+        from . import server
+
+        return server.stop_certificate_transfer()
+
     def signed_status(self, params: dict[str, Any]) -> dict[str, Any]:
         return _as_dict(sideload.signed_status(params.get("directory")))
 
@@ -596,6 +611,9 @@ _METHODS = {
     "settings.set": "settings_set",
     "signing.status": "signing_status",
     "signing.download": "signing_download",
+    "certificate.transfer.status": "certificate_transfer_status",
+    "certificate.transfer.start": "certificate_transfer_start",
+    "certificate.transfer.stop": "certificate_transfer_stop",
     "signed.status": "signed_status",
     "signed.clean": "signed_clean",
     "emstore.status": "emstore_status",

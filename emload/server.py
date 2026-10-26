@@ -45,6 +45,7 @@ import json
 import queue
 import requests
 import secrets
+import socket
 import ssl
 import sys
 import threading
@@ -822,6 +823,109 @@ def create_certificate_transfer_server(
     context.load_cert_chain(certfile=str(cert_path), keyfile=str(key_path))
     httpd.socket = context.wrap_socket(httpd.socket, server_side=True)
     return httpd, fingerprint
+
+
+def lan_ipv4() -> str:
+    """IPv4 address another device on the same network can use to reach this Mac."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    try:
+        # UDP connect picks the outbound interface and does not send a packet.
+        probe.connect(("192.0.2.1", 9))
+        address = probe.getsockname()[0]
+    except OSError:
+        address = "127.0.0.1"
+    finally:
+        probe.close()
+    if not address or address.startswith("127."):
+        return "127.0.0.1"
+    return address
+
+
+class _CertificateShare:
+    def __init__(
+        self,
+        httpd: CertificateTransferHTTPServer,
+        thread: threading.Thread,
+        token: str,
+        fingerprint: str,
+        url: str,
+    ) -> None:
+        self.httpd = httpd
+        self.thread = thread
+        self.token = token
+        self.fingerprint = fingerprint
+        self.url = url
+
+
+_certificate_share_lock = threading.Lock()
+_certificate_share: _CertificateShare | None = None
+
+
+def _certificate_share_report(share: _CertificateShare | None) -> dict[str, Any]:
+    if share is None:
+        return {"running": False}
+    host, port = share.httpd.server_address[:2]
+    return {
+        "running": True,
+        "url": share.url,
+        "token": share.token,
+        "fingerprint": share.fingerprint,
+        "host": host,
+        "port": port,
+    }
+
+
+def certificate_transfer_status() -> dict[str, Any]:
+    """Whether EmContainer can currently import the signing certificate."""
+    with _certificate_share_lock:
+        return _certificate_share_report(_certificate_share)
+
+
+def start_certificate_transfer() -> dict[str, Any]:
+    """Listen on the LAN and return the URL, token, and fingerprint EmContainer asks for.
+
+    The same values stay valid until :func:`stop_certificate_transfer`. Starting
+    again while a share is already running does not rotate the token.
+    """
+    global _certificate_share
+    provision.signing_identity()
+    with _certificate_share_lock:
+        if _certificate_share is not None:
+            return _certificate_share_report(_certificate_share)
+        token = secrets.token_urlsafe(32)
+        httpd, fingerprint = _bind_certificate_transfer(token)
+        port = httpd.server_address[1]
+        url = f"https://{lan_ipv4()}:{port}/api/certificate"
+        thread = threading.Thread(
+            target=httpd.serve_forever,
+            name="EmLoadCertificateTransfer",
+            daemon=True,
+        )
+        thread.start()
+        share = _CertificateShare(httpd, thread, token, fingerprint, url)
+        _certificate_share = share
+        return _certificate_share_report(share)
+
+
+def stop_certificate_transfer() -> dict[str, Any]:
+    """Stop the certificate share started by :func:`start_certificate_transfer`."""
+    global _certificate_share
+    with _certificate_share_lock:
+        share = _certificate_share
+        _certificate_share = None
+    if share is not None:
+        share.httpd.shutdown()
+        share.httpd.server_close()
+    return {"running": False}
+
+
+def _bind_certificate_transfer(token: str) -> tuple[CertificateTransferHTTPServer, str]:
+    """Bind the transfer server, preferring the port next to the SideStore API."""
+    preferred = DEFAULT_PORT + CERTIFICATE_TRANSFER_PORT_OFFSET
+    try:
+        return create_certificate_transfer_server("0.0.0.0", preferred, token)
+    except OSError:
+        return create_certificate_transfer_server("0.0.0.0", 0, token)
 
 
 class ApiHandler(BaseHTTPRequestHandler):
