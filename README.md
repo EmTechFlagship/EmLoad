@@ -62,7 +62,7 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
 
 ## Requirements
 
-- Windows 10/11, Linux, or an Apple silicon Mac (native macOS app)
+- Windows 10/11, Linux, or a Mac (native macOS app on Apple silicon and Intel)
 - Python 3.10+ (3.12 recommended — `pymobiledevice3` needs prebuilt wheels)
 - Apple **Devices** (or iTunes) from the Microsoft Store on Windows — that's what
   provides the USB/`usbmuxd` service
@@ -82,9 +82,9 @@ Download these from the **0.1.0 Beta 1** release:
 | `EmLoad-Cli-Setup-0.1.0-beta1.exe` | `emload` on your PATH (plus `emload gui` if you keep PySide6) |
 | `EmLoad-0.1.0-beta1-win-x64.zip` | Portable folder, no installer — run `First-Run.cmd` |
 
-The prerelease also includes `EmLoad-0.1.0-beta1-macos-arm64.zip` for Apple
-silicon Macs. See [gui-macos/README.md](gui-macos/README.md) for macOS
-requirements and setup.
+The prerelease also includes `EmLoad-0.1.0-beta1-macos.dmg` for a
+drag-and-drop install on Apple silicon and Intel Macs, plus a ZIP archive. See
+[gui-macos/README.md](gui-macos/README.md) for macOS requirements and setup.
 
 Both installers are **per-user and need no admin rights**. They install to
 `%LOCALAPPDATA%\Programs\EmLoad` (desktop) or `...\EmLoad CLI`, create a private
@@ -266,9 +266,9 @@ On **macOS 26 (Tahoe) or newer** the window, sidebar selection, cards and
 primary buttons use **Liquid Glass** (`NSGlassEffectView` / `.glassEffect`),
 with the desktop visible through the window backdrop. macOS 13–15 get the same
 layout with `NSVisualEffectView` and `.ultraThinMaterial` instead, and
-**Reduce Transparency** falls back to a solid window. The app requires an
-Apple silicon Mac and macOS 13+; Intel Macs are not supported because zsign
-does not publish an Intel macOS build.
+**Reduce Transparency** falls back to a solid window. The app runs on Apple
+silicon and Intel Macs with macOS 13+. The build compiles `zsign` from source
+(upstream does not publish an Intel macOS binary) and bundles it in the app.
 
 ```bash
 # 1. Install the Python engine and its dependencies (once)

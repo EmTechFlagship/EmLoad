@@ -21,7 +21,7 @@ python -m emload rpc
 
 ## Requirements
 
-- Apple silicon Mac (Intel Macs are not supported)
+- Apple silicon or Intel Mac
 - macOS 13 Ventura or newer
 - Xcode 15+ command line tools (Xcode 26 is needed to *compile* the Liquid
   Glass APIs; older toolchains can build the macOS 13 fallback if you remove the
@@ -34,7 +34,8 @@ python -m emload rpc
   .venv/bin/python -m emload doctor
   ```
 - An iPhone/iPad with Developer Mode enabled and a trusted pairing
-- `zsign` (EmLoad can download the official Apple silicon build from Settings)
+- `zsign` (the build script compiles it for this Mac and bundles it; Settings
+  can also download the official Apple silicon release or compile from source)
 
 The macOS app is not sandboxed: it needs to spawn Python, talk to `usbmuxd`,
 and read/write the user's Application Support folder.
@@ -50,21 +51,28 @@ RUN=1 ./scripts/build-app.sh    # build, sign and launch
 
 Pushing a versioned beta tag (for example, `v0.1.0-beta1`) runs the
 `Release` GitHub Actions workflow. You can also run that workflow manually
-with a beta channel such as `Beta 1`. It builds an Apple-silicon
-`EmLoad-0.1.0-beta1-macos-arm64.zip` and attaches it to the same prerelease as
-the Windows installers. The archive contains `EmLoad.app`; it is ad-hoc signed,
-not notarized. Use only on macOS 13 or newer, and follow the setup instructions
-above for the Python engine requirements.
+with a beta channel such as `Beta 1`. It builds
+`EmLoad-0.1.0-beta1-macos.dmg` and
+`EmLoad-0.1.0-beta1-macos.zip` for Apple silicon and Intel, attaching both to
+the same prerelease as the Windows installers. A single-architecture build is
+named `macos-arm64` or `macos-x86_64` instead. Open the DMG and drag
+`EmLoad.app` onto the Applications shortcut to install. The ZIP contains the
+app bundle directly. The app is ad-hoc signed, not notarized. Use only on
+macOS 13 or newer, and follow the setup instructions above for the Python
+engine requirements.
 
-The build script refuses to run on Intel Macs and produces an arm64-only app.
-The Swift app also fails compilation for non-arm64 targets. The script:
+The build script produces a universal app when both slices compile, and
+otherwise keeps the host architecture. It also compiles `zsign` (from
+`ZSIGN_SRC`, `~/zsign`, or a clone of zhlynn/zsign) and copies it into the
+bundle. The script:
 
-1. runs `swift build -c release`;
+1. runs `swift build -c release` for x86_64 and arm64;
 2. assembles `EmLoad.app/Contents/{MacOS,Resources}`;
 3. copies the repo's `emload/` package and `pyproject.toml` into
    `Contents/Resources/engine/`;
 4. writes the checkout path to `Contents/Resources/engine-root.txt`;
-5. ad-hoc signs the bundle (`codesign --force --deep --sign -`).
+5. compiles `zsign` and installs it in the bundle and in Application Support;
+6. ad-hoc signs the bundle (`codesign --force --deep --sign -`).
 
 You can also open `Package.swift` in Xcode and run the `EmLoadMac` scheme. The
 app bundle is only produced by the script; Xcode's debug build will look for
@@ -189,9 +197,10 @@ Unlock the phone and tap Trust. Check `emload devices` in Terminal. On macOS,
 needed.
 
 **Using EmLoad on an Intel Mac**
-The native macOS app requires Apple silicon. Intel Macs are not supported
-because zsign does not publish an Intel macOS build. Use EmLoad on an
-Apple-silicon Mac, or use the Windows/Linux CLI instead.
+Build with `./scripts/build-app.sh` on that Mac, or install a universal
+`macos` release. `zsign` is compiled from source during the build because
+upstream only publishes an Apple silicon macOS binary. The app passes that
+binary to the engine as `EMLOAD_ZSIGN`.
 
 **The app opens but the window is invisible**
 Make sure you launched the assembled `.app` (not the raw SwiftPM executable)

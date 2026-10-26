@@ -1,7 +1,3 @@
-#if !arch(arm64)
-#error("The EmLoad macOS app requires an Apple silicon Mac (arm64).")
-#endif
-
 import AppKit
 import SwiftUI
 

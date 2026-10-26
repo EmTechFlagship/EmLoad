@@ -98,7 +98,7 @@ jobs:
             source_tag="v$version-$slug"
           fi
 
-          source_tag="${source_tag,,}"
+          source_tag="$(printf '%s' "$source_tag" | tr '[:upper:]' '[:lower:]')"
           if [[ "$source_tag" =~ ^v?([0-9]+\.[0-9]+\.[0-9]+)-beta([0-9]+)$ ]]; then
             version="${BASH_REMATCH[1]}"
             beta="${BASH_REMATCH[2]}"
@@ -140,14 +140,34 @@ jobs:
           OUTPUT_TAG: ${{ steps.version.outputs.outputtag }}
         run: |
           mkdir -p dist
-          archive="EmLoad-${OUTPUT_TAG}-macos-arm64.zip"
+          app_bin="gui-macos/dist/EmLoad.app/Contents/MacOS/EmLoadMac"
+          arches="$(lipo -archs "$app_bin")"
+          if [[ "$arches" == *"x86_64"* && "$arches" == *"arm64"* ]]; then
+            suffix="macos"
+          else
+            suffix="macos-$(printf '%s' "$arches" | tr ' ' '-')"
+          fi
+          archive="EmLoad-${OUTPUT_TAG}-${suffix}.zip"
           ditto -c -k --sequesterRsrc --keepParent gui-macos/dist/EmLoad.app "dist/$archive"
+
+          dmg_root="$(mktemp -d)"
+          trap 'rm -rf "$dmg_root"' EXIT
+          ditto gui-macos/dist/EmLoad.app "$dmg_root/EmLoad.app"
+          ln -s /Applications "$dmg_root/Applications"
+          hdiutil create \
+            -volname "EmLoad $OUTPUT_TAG" \
+            -srcfolder "$dmg_root" \
+            -ov \
+            -format UDZO \
+            "dist/EmLoad-${OUTPUT_TAG}-${suffix}.dmg"
 
       - name: Upload macOS build artifact
         uses: actions/upload-artifact@v4
         with:
           name: emload-macos-${{ steps.version.outputs.outputtag }}
-          path: dist/EmLoad-*-macos-arm64.zip
+          path: |
+            dist/EmLoad-*-macos*.zip
+            dist/EmLoad-*-macos*.dmg
           if-no-files-found: error
           retention-days: 90
 
@@ -322,7 +342,7 @@ jobs:
         shell: pwsh
         run: |
           $files = @(Get-ChildItem -LiteralPath dist -File |
-            Where-Object { $_.Extension -in '.exe', '.zip' } | Sort-Object Name)
+            Where-Object { $_.Extension -in '.exe', '.zip', '.dmg' } | Sort-Object Name)
           if (-not $files) { throw 'The build produced no artifacts.' }
 
           $lines = foreach ($file in $files) {
@@ -338,6 +358,7 @@ jobs:
           path: |
             dist/*.exe
             dist/*.zip
+            dist/*.dmg
             dist/SHA256SUMS.txt
           if-no-files-found: error
           retention-days: 90
@@ -386,12 +407,15 @@ jobs:
             'Check the download against `SHA256SUMS.txt`.'
           ) -join "`n"
 
-          $macosArchive = "EmLoad-$env:OUTPUT_TAG-macos-arm64.zip"
-          if (Test-Path -LiteralPath (Join-Path 'dist' $macosArchive)) {
+          $macosArchiveItem = Get-ChildItem -LiteralPath dist -Filter "EmLoad-$env:OUTPUT_TAG-macos*.zip" | Select-Object -First 1
+          $macosDmgItem = Get-ChildItem -LiteralPath dist -Filter "EmLoad-$env:OUTPUT_TAG-macos*.dmg" | Select-Object -First 1
+          if ($macosArchiveItem -or $macosDmgItem) {
+            $macosArchive = if ($macosArchiveItem) { $macosArchiveItem.Name } else { '' }
+            $macosDmg = if ($macosDmgItem) { $macosDmgItem.Name } else { '' }
             $macosNotes = @(
               '## macOS beta'
               ''
-              ('Download `{0}` for Apple silicon Macs (macOS 13 or newer).' -f $macosArchive)
+              ('Download `{0}` for a drag-and-drop install, or `{1}` as a ZIP archive, for Apple silicon and Intel Macs (macOS 13 or newer). zsign is bundled in the app.' -f $macosDmg, $macosArchive)
               'The app is ad-hoc signed, not notarized. Python 3.10+ with the EmLoad'
               'requirements installed is needed to run the bundled engine; see the'
               ("macOS setup guide: https://github.com/{0}/blob/{1}/gui-macos/README.md" -f $env:REPOSITORY, $env:TAG)
@@ -403,7 +427,7 @@ jobs:
           Set-Content -LiteralPath $notesPath -Value $notes -Encoding utf8
 
           $assets = @(Get-ChildItem -LiteralPath dist -File |
-            Where-Object { $_.Extension -in '.exe', '.zip' } | ForEach-Object FullName)
+            Where-Object { $_.Extension -in '.exe', '.zip', '.dmg' } | ForEach-Object FullName)
           $assets += (Resolve-Path -LiteralPath 'dist/SHA256SUMS.txt').Path
 
           # A channel label means a pre-release (Beta 1, RC 2, ...); a bare

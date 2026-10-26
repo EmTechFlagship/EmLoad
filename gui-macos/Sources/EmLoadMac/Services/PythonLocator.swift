@@ -83,6 +83,21 @@ enum PythonLocator {
         return nil
     }
 
+    /// zsign compiled into the app by `scripts/build-app.sh`.
+    ///
+    /// Used when the engine is the checkout (which has no Mach-O in `vendor/`)
+    /// rather than the copy inside the bundle.
+    static func bundledZsign() -> String? {
+        let fm = FileManager.default
+        var candidates: [String] = []
+        if let resources = Bundle.main.resourceURL {
+            candidates.append(resources.appendingPathComponent("zsign").path)
+            candidates.append(resources.appendingPathComponent("engine/emload/vendor/zsign").path)
+        }
+        candidates.append(Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/zsign").path)
+        return candidates.first { fm.isExecutableFile(atPath: $0) }
+    }
+
     /// The engine copied by `scripts/build-app.sh`.
     private static func bundledEngineRoot() -> String? {
         guard let resources = Bundle.main.resourceURL else { return nil }

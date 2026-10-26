@@ -126,7 +126,7 @@ struct SettingsView: View {
                     .disabled(downloadingZsign)
                 }
 
-                Text("EmLoad downloads the official Apple silicon zsign release. The macOS app requires an Apple silicon Mac.")
+                Text("The macOS app includes a zsign built for this Mac (Apple silicon or Intel). Download uses the official release when one exists, and otherwise compiles zsign from source.")
                     .font(.caption)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -300,7 +300,7 @@ struct SettingsView: View {
             return
         }
         downloadingZsign = true
-        state.setBusy(true, "Downloading zsign…")
+        state.setBusy(true, "Installing zsign…")
         defer {
             downloadingZsign = false
             state.setBusy(false)

@@ -107,9 +107,9 @@ def resolve_zsign() -> str:
         return found
     if sys.platform == "darwin":
         raise SigningError(
-            "zsign not found. Run 'emload setup' (it downloads the Apple-silicon "
-            "build or installs Homebrew's zsign), set EM_ZSIGN, or place a zsign "
-            "binary in vendor/."
+            "zsign not found. Run 'emload setup' (it downloads the official "
+            "build, or compiles zsign for Intel and Apple silicon), set "
+            "EMLOAD_ZSIGN, or place a zsign binary in vendor/."
         )
     raise SigningError(
         "zsign not found. Run 'emload setup' to download it, set EM_ZSIGN, or "
@@ -168,8 +168,8 @@ def zsign_download_urls() -> list[str]:
     """Candidate URLs for a prebuilt zsign, newest release first.
 
     zsign publishes a macOS arm64 tarball, Linux tarballs for x86_64/aarch64,
-    and a Windows zip. There is no official Intel-macOS build, so ``emload
-    setup`` falls back to Homebrew there (see :func:`download_zsign`).
+    and a Windows zip. There is no official Intel-macOS build; ``emload setup``
+    compiles one from source on macOS (see :func:`download_zsign`).
     """
     tag = _latest_zsign_tag()
     urls: list[str] = []
@@ -232,6 +232,29 @@ def _extract_zsign(data: bytes, dest: Path) -> None:
     dest.write_bytes(data)
 
 
+def _macos_zsign_build_script() -> Path | None:
+    """The macOS script that compiles zsign for x86_64 and arm64."""
+    candidates: list[Path] = []
+    override = os.environ.get("EMLOAD_ZSIGN_SCRIPT")
+    if override:
+        candidates.append(Path(override))
+    root = Path(__file__).resolve().parents[1]
+    candidates.append(root / "gui-macos" / "scripts" / "build-zsign.sh")
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def _compile_zsign(dest: Path) -> None:
+    """Compile zsign into ``dest``. Raises if the macOS build script fails."""
+    script = _macos_zsign_build_script()
+    if script is None:
+        raise FileNotFoundError("gui-macos/scripts/build-zsign.sh")
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run([str(script), "-o", str(dest)], check=True, timeout=1800)
+
+
 def _install_zsign_with_brew() -> str | None:
     """Install Homebrew's zsign on macOS and return its path (or None)."""
     if sys.platform != "darwin":
@@ -283,8 +306,8 @@ def _install_zsign_with_brew() -> str | None:
 def download_zsign(urls: list[str] | None = None) -> dict[str, Any]:
     """Download a prebuilt zsign into the data dir; returns a status report.
 
-    On Intel macOS (where upstream publishes no binary) and as a fallback when
-    every download fails, Homebrew's ``zsign`` formula is tried.
+    On macOS, a failed download (including Intel, which has no upstream
+    binary) is followed by a source build, then Homebrew's ``zsign`` formula.
     """
     attempts: list[str] = []
     dest = paths.zsign_file()
@@ -302,6 +325,18 @@ def download_zsign(urls: list[str] | None = None) -> dict[str, Any]:
         except Exception as exc:  # noqa: BLE001 - record every source that failed
             attempts.append(f"{url}: {exc}")
 
+    if sys.platform == "darwin":
+        try:
+            _compile_zsign(dest)
+            dest.chmod(0o755)
+            version = zsign_version()
+            if version is None:
+                dest.unlink(missing_ok=True)
+                raise ValueError("compiled binary does not run")
+            return {"status": "ok", "path": str(dest), "version": version, "source": "source"}
+        except Exception as exc:  # noqa: BLE001 - Homebrew is the remaining fallback
+            attempts.append(f"compile: {exc}")
+
     brew_path = _install_zsign_with_brew()
     if brew_path:
         version = zsign_version()
@@ -314,11 +349,11 @@ def download_zsign(urls: list[str] | None = None) -> dict[str, Any]:
 
     detail = "\n  ".join(attempts) if attempts else "no prebuilt binary for this platform"
     hint = (
-        "On Intel macOS, install it with 'brew install zsign' or build it from "
-        "https://github.com/zhlynn/zsign and set EM_ZSIGN to the binary."
+        "On macOS, ./gui-macos/scripts/build-zsign.sh compiles zsign for Intel "
+        "and Apple silicon. You can also 'brew install zsign' or set EMLOAD_ZSIGN."
         if sys.platform == "darwin"
         else
-        "Build it from https://github.com/zhlynn/zsign and set EM_ZSIGN to the "
+        "Build it from https://github.com/zhlynn/zsign and set EMLOAD_ZSIGN to the "
         "binary, or drop it in vendor/."
     )
     raise SigningError(

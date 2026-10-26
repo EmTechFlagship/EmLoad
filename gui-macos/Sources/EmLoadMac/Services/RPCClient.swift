@@ -64,6 +64,9 @@ final class RPCClient {
         var environment = ProcessInfo.processInfo.environment
         environment["PYTHONUNBUFFERED"] = "1"
         environment["PYTHONIOENCODING"] = "utf-8"
+        if environment["EMLOAD_ZSIGN"] == nil, let zsign = PythonLocator.bundledZsign() {
+            environment["EMLOAD_ZSIGN"] = zsign
+        }
         process.environment = environment
 
         let stdinPipe = Pipe()
