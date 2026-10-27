@@ -82,6 +82,14 @@ class _State:
         return hashlib.sha256(self.identifier).hexdigest()
 
 
+def _websocket_url(server: str) -> str:
+    if server.startswith("https://"):
+        return "wss://" + server[len("https://"):]
+    if server.startswith("http://"):
+        return "ws://" + server[len("http://"):]
+    raise _Unavailable("anisette service URL must be http or https")
+
+
 def _state_path():
     return paths.anisette_dir() / STATE_FILE
 
@@ -191,8 +199,8 @@ class RemoteAnisette:
         override = os.environ.get(SERVER_ENV, "").strip().rstrip("/")
         if override:
             parsed = urlparse(override)
-            if parsed.scheme != "https" or not parsed.hostname:
-                raise AnisetteError(f"{SERVER_ENV} must be an https:// URL")
+            if parsed.scheme not in ("https", "http") or not parsed.hostname:
+                raise AnisetteError(f"{SERVER_ENV} must be an http:// or https:// URL")
             return (override,)
         return SERVERS
 
@@ -272,7 +280,7 @@ class RemoteAnisette:
         return reply
 
     def _provision(self, server: str, client_info: str, user_agent: str, state: _State) -> None:
-        socket_ = _WebSocket(server.replace("https://", "wss://", 1) + "/v3/provisioning_session")
+        socket_ = _WebSocket(_websocket_url(server) + "/v3/provisioning_session")
         deadline = time.monotonic() + _PROVISIONING_DEADLINE
         try:
             while True:

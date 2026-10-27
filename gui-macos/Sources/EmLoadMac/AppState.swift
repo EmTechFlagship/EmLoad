@@ -18,9 +18,11 @@ final class AppState: ObservableObject {
     @Published var alertMessage: String?
     @Published var showLogin = false
     @Published var emstore: EmStoreStatus?
+    @Published var availableUpdate: AppUpdate?
 
     private(set) var engine: RPCClient?
     private var started = false
+    private var didAutoCheckForUpdate = false
     private let logLimit = 2_000
 
     var logText: String {
@@ -68,6 +70,34 @@ final class AppState: ObservableObject {
             startupError = message
             statusMessage = "Engine offline"
             appendLog("Startup failed: \(message)")
+        }
+    }
+
+    /// Looks for a newer GitHub release, including pre-releases. The automatic
+    /// check runs once per launch and stays quiet when nothing is newer.
+    func checkForAppUpdate(interactive: Bool = false) async {
+        guard interactive || !didAutoCheckForUpdate else { return }
+        if !interactive {
+            didAutoCheckForUpdate = true
+            guard Bundle.main.bundleURL.pathExtension == "app" else { return }
+            if ProcessInfo.processInfo.environment["EMLOAD_SKIP_UPDATES"] == "1" {
+                return
+            }
+        }
+
+        let current = ReleaseVersion.current()
+        do {
+            if let update = try await AppUpdateChecker.latest(newerThan: current) {
+                availableUpdate = update
+                appendLog("Update available: \(update.title)")
+            } else if interactive {
+                alertMessage = "EmLoad \(current.description) is up to date."
+            }
+        } catch {
+            appendLog("Update check failed: \(error.localizedDescription)")
+            if interactive {
+                alertMessage = "Could not check for updates. \(error.localizedDescription)"
+            }
         }
     }
 

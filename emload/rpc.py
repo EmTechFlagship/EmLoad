@@ -456,6 +456,23 @@ class Handlers:
         bundle_id = params["bundleId"]
         return {"bundle_id": bundle_id, "forgotten": registry.forget(bundle_id)}
 
+    def jit_apps(self, params: dict[str, Any]) -> list[dict[str, Any]]:
+        from . import jit
+
+        return jit.list_user_apps(params.get("udid"))
+
+    def jit_enable(self, params: dict[str, Any], progress: Callable[..., None]) -> dict[str, Any]:
+        from . import jit
+
+        bundle_id = params.get("bundleId") or params.get("bundle_id")
+        return jit.enable_jit(
+            params.get("udid"),
+            str(bundle_id or ""),
+            launch=not bool(params.get("runningOnly")),
+            relaunch=bool(params.get("relaunch")),
+            on_progress=progress,
+        )
+
     def apps_uninstall(self, params: dict[str, Any]) -> dict[str, Any]:
         apps.uninstall(params["bundleId"], params.get("udid"))
         return {"bundle_id": params["bundleId"], "uninstalled": True}
@@ -581,6 +598,7 @@ _STREAMING = {
     "emstore.install": "emstore_install",
     "nugget.apply": "nugget_apply",
     "nugget.respring": "nugget_respring",
+    "jit.enable": "jit_enable",
 }
 
 #: Public method name -> Handlers attribute. Underscored names never leak out.
@@ -599,6 +617,8 @@ _METHODS = {
     "library.refresh": "library_refresh",
     "library.forget": "library_forget",
     "apps.uninstall": "apps_uninstall",
+    "jit.apps": "jit_apps",
+    "jit.enable": "jit_enable",
     "account.status": "account_status",
     "account.resume": "account_resume",
     "account.login": "account_login",

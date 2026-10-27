@@ -42,5 +42,7 @@ output/
 gui-macos/.build/
 gui-macos/.swiftpm/
 gui-macos/dist/
+EmLoadServer/.build/
+EmLoadServer/.swiftpm/
 gui-macos/*.xcodeproj/
 *.xcworkspace/

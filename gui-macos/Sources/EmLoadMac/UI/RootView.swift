@@ -16,6 +16,9 @@ struct EmLoadMacApp: App {
         .commands {
             CommandGroup(replacing: .newItem) {}
             CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") {
+                    NotificationCenter.default.post(name: .emloadCheckForUpdates, object: nil)
+                }
                 Button("Check Diagnostics") {
                     NotificationCenter.default.post(name: .emloadShowDiagnostics, object: nil)
                 }
@@ -27,12 +30,15 @@ struct EmLoadMacApp: App {
 
 extension Notification.Name {
     static let emloadShowDiagnostics = Notification.Name("EmLoadShowDiagnostics")
+    static let emloadCheckForUpdates = Notification.Name("EmLoadCheckForUpdates")
 }
 
 enum AppSection: String, CaseIterable, Identifiable {
     case devices
+    case storeSetup
     case sideload
     case library
+    case jit
     case misc
     case account
     case settings
@@ -40,17 +46,28 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Sections offered in the sidebar. The Misc Tweaks page stays implemented
-    /// (and can still be selected with `EMLOAD_SECTION=misc`) but is hidden.
-    static var visible: [AppSection] {
-        allCases.filter { $0 != .misc }
+    /// Sections offered in the sidebar. Misc Tweaks stays implemented, and
+    /// EmLoadStore Setup appears only while an iPhone or iPad is connected.
+    static func visible(deviceConnected: Bool) -> [AppSection] {
+        allCases.filter { section in
+            switch section {
+            case .misc:
+                return false
+            case .storeSetup:
+                return deviceConnected
+            default:
+                return true
+            }
+        }
     }
 
     var title: String {
         switch self {
         case .devices: return "Devices"
+        case .storeSetup: return "EmLoadStore Setup"
         case .sideload: return "Sideload"
         case .library: return "Library"
+        case .jit: return "JIT"
         case .misc: return "Misc Tweaks"
         case .account: return "Account"
         case .settings: return "Settings"
@@ -62,10 +79,14 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .devices:
             return "Phones and iPads visible to EmLoad over USB or Wi-Fi."
+        case .storeSetup:
+            return "Sign in with EmLoadServer, install EmLoadStoreCompanion, and export a pairing record."
         case .sideload:
             return "Sign and install an .ipa with your own Apple ID. Signatures last seven days."
         case .library:
             return "Apps EmLoad has installed, with their remaining signature lifetime."
+        case .jit:
+            return "Turn on just-in-time compilation for a sideloaded app until it quits."
         case .misc:
             return "SpringBoard, daemon and Liquid Glass tweaks applied through sparserestore."
         case .account:
@@ -80,8 +101,10 @@ enum AppSection: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .devices: return "iphone"
+        case .storeSetup: return "app.badge"
         case .sideload: return "square.and.arrow.down"
-        case .library: return "books.vertical"
+        case .library: return "square.grid.2x2"
+        case .jit: return "bolt"
         case .misc: return "wand.and.stars"
         case .account: return "person.crop.circle"
         case .settings: return "gearshape"
@@ -96,21 +119,45 @@ struct RootView: View {
         rawValue: ProcessInfo.processInfo.environment["EMLOAD_SECTION"] ?? ""
     ) ?? .devices
     @State private var showLog = false
+    @State private var sidebarVisible = true
 
     var body: some View {
-        ZStack {
-            LiquidGlassBackdrop()
+        ZStack(alignment: .top) {
+            EmTheme.window
 
             if let error = state.startupError {
                 StartupFailureView(message: error)
             } else {
                 shell
             }
+
+            WindowDragArea()
+                .frame(height: 38)
+                .frame(maxWidth: .infinity)
+
+            Text("EmLoad")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(EmTheme.label)
+                .padding(.top, 11)
+                .frame(maxWidth: .infinity)
+                .allowsHitTesting(false)
+        }
+        .overlay(alignment: .topLeading) {
+            SidebarToggleButton(visible: $sidebarVisible)
+                .padding(.leading, sidebarVisible ? 184 : 74)
+                .padding(.top, 8)
         }
         .background(WindowConfigurator())
+        .preferredColorScheme(.dark)
+        .tint(EmTheme.accent)
         .ignoresSafeArea()
         .frame(minWidth: 1_040, minHeight: 700)
         .task { await state.initialize() }
+        .task { await state.checkForAppUpdate() }
+        .sheet(item: $state.availableUpdate) { update in
+            UpdateSheet(update: update)
+                .environmentObject(state)
+        }
         .sheet(isPresented: $state.showLogin) {
             LoginSheet()
                 .environmentObject(state)
@@ -121,6 +168,19 @@ struct RootView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .emloadShowDiagnostics)) { _ in
             section = .diagnostics
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .emloadCheckForUpdates)) { _ in
+            Task { await state.checkForAppUpdate(interactive: true) }
+        }
+        .onChange(of: state.devices) { devices in
+            if state.isReady, devices.isEmpty, section == .storeSetup {
+                section = .devices
+            }
+        }
+        .onChange(of: state.isReady) { ready in
+            if ready, state.devices.isEmpty, section == .storeSetup {
+                section = .devices
+            }
         }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             state.shutdown()
@@ -140,16 +200,22 @@ struct RootView: View {
 
     private var shell: some View {
         HStack(spacing: 0) {
-            SidebarView(section: $section)
-                .frame(width: 238)
+            if sidebarVisible {
+                SidebarView(section: $section)
+                    .frame(width: 220)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
 
-            Rectangle()
-                .fill(Color.primary.opacity(0.09))
-                .frame(width: 1)
+                Rectangle()
+                    .fill(EmTheme.hairline)
+                    .frame(width: 1)
+            }
 
             VStack(spacing: 0) {
                 page
-                Divider().opacity(0.25)
+                    .padding(.top, 34)
+                Rectangle()
+                    .fill(EmTheme.hairline)
+                    .frame(height: 1)
                 StatusBar(showLog: $showLog)
             }
         }
@@ -159,8 +225,10 @@ struct RootView: View {
     private var page: some View {
         switch section {
         case .devices: DevicesView()
+        case .storeSetup: EmLoadStoreSetupView()
         case .sideload: SideloadView()
         case .library: LibraryView()
+        case .jit: JitView()
         case .misc: MiscView()
         case .account: AccountView()
         case .settings: SettingsView()
@@ -184,6 +252,7 @@ struct StatusBar: View {
             Text(state.statusMessage)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .foregroundStyle(EmTheme.secondary)
 
             if state.isBusy {
                 HStack(spacing: 6) {
@@ -200,24 +269,19 @@ struct StatusBar: View {
 
             Text("emload \(state.engineVersion)")
                 .monospacedDigit()
-                .foregroundStyle(.secondary)
-
-            Text("·")
-                .foregroundStyle(.tertiary)
-
-            Text("Python engine")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(EmTheme.tertiary)
 
             Button {
                 showLog = true
             } label: {
                 Image(systemName: "text.alignleft")
+                    .foregroundStyle(EmTheme.secondary)
             }
             .buttonStyle(.plain)
             .help("Show the full engine log")
         }
         .font(.caption)
-        .padding(.horizontal, 24)
+        .padding(.horizontal, 28)
         .padding(.vertical, 8)
     }
 }

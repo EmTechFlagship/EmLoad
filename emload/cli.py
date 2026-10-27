@@ -17,6 +17,7 @@
     emload installs              list recorded sideloads with days left
     emload forget <bundle_id>    stop tracking a sideload
     emload apps                  list apps installed on the device
+    emload jit <bundle_id>       enable JIT for an installed app
     emload uninstall <bundle_id> remove an app from the device
     emload profiles              list provisioning profiles on the device
     emload unprovision <uuid>    remove a provisioning profile from the device
@@ -42,7 +43,7 @@ import sys
 import threading
 from typing import Any, Callable
 
-from . import __version__, anisette, apps, device, doctor, gsa, ipa, paths, provision, registry, server, sideload, signing
+from . import __version__, anisette, apps, device, doctor, gsa, ipa, jit, paths, provision, registry, server, sideload, signing
 from .errors import EmLoadError
 
 
@@ -280,6 +281,18 @@ def cmd_apps(args: argparse.Namespace) -> int:
 def cmd_uninstall(args: argparse.Namespace) -> int:
     apps.uninstall(args.bundle_id, args.udid)
     _emit(args, {"bundle_id": args.bundle_id, "uninstalled": True})
+    return 0
+
+
+def cmd_jit(args: argparse.Namespace) -> int:
+    result = jit.enable_jit(
+        args.udid,
+        args.bundle_id,
+        launch=not args.running_only,
+        relaunch=args.relaunch,
+        on_progress=_progress(args),
+    )
+    _emit(args, result)
     return 0
 
 
@@ -566,6 +579,20 @@ def build_parser() -> argparse.ArgumentParser:
                                       help="uninstall an app by bundle id")
     uninstall_parser.add_argument("bundle_id", help="bundle identifier to remove")
 
+    jit_parser = sub.add_parser(
+        "jit", parents=[common, target],
+        help="enable JIT for an installed app (debugserver attach, then detach)",
+    )
+    jit_parser.add_argument("bundle_id", help="bundle identifier of the installed app")
+    jit_parser.add_argument(
+        "--running-only", action="store_true",
+        help="attach only when the app is already running; do not launch it",
+    )
+    jit_parser.add_argument(
+        "--relaunch", action="store_true",
+        help="quit the app if it is open, then launch it suspended before attaching",
+    )
+
     sub.add_parser("profiles", parents=[common, target],
                    help="list provisioning profiles installed on the device")
 
@@ -679,6 +706,7 @@ def dispatch(args: argparse.Namespace) -> int:
         "forget": cmd_forget,
         "apps": cmd_apps,
         "uninstall": cmd_uninstall,
+        "jit": cmd_jit,
         "profiles": cmd_profiles,
         "unprovision": cmd_unprovision,
         "signed": cmd_signed,

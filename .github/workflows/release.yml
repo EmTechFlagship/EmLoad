@@ -133,6 +133,8 @@ jobs:
           PY
 
       - name: Build EmLoad.app
+        env:
+          EMLOAD_RELEASE: ${{ steps.version.outputs.outputtag }}
         run: ./gui-macos/scripts/build-app.sh
 
       - name: Package macOS app
@@ -416,6 +418,7 @@ jobs:
               '## macOS beta'
               ''
               ('Download `{0}` for a drag-and-drop install, or `{1}` as a ZIP archive, for Apple silicon and Intel Macs (macOS 13 or newer). zsign is bundled in the app.' -f $macosDmg, $macosArchive)
+              'Opening the app checks GitHub for a newer release, including pre-releases, and can replace this copy.'
               'The app is ad-hoc signed, not notarized. Python 3.10+ with the EmLoad'
               'requirements installed is needed to run the bundled engine; see the'
               ("macOS setup guide: https://github.com/{0}/blob/{1}/gui-macos/README.md" -f $env:REPOSITORY, $env:TAG)

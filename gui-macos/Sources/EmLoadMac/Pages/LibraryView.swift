@@ -12,17 +12,18 @@ struct LibraryView: View {
     var body: some View {
         PageScroll {
             PageHeader(
-                title: "Library",
-                subtitle: "Every app EmLoad installed is recorded here with its seven-day signature lifetime."
+                title: "Your Library",
+                subtitle: "Apps EmLoad has installed, with the time left on each signature."
             ) {
                 HStack(spacing: 8) {
                     Button {
                         Task { await reload() }
                     } label: {
-                        Label("Reload", systemImage: "arrow.clockwise")
+                        Image(systemName: "arrow.clockwise")
                     }
                     .emSecondaryButton()
                     .disabled(isLoading || isRefreshing)
+                    .help("Reload the library")
 
                     Button {
                         Task { await refresh(bundleIds: apps.map(\.bundleId)) }
@@ -34,32 +35,29 @@ struct LibraryView: View {
                 }
             }
 
+            if let notice = setupNotice {
+                NoticeBanner(text: notice)
+            }
+
             if !status.isEmpty {
                 HStack(spacing: 8) {
                     if isRefreshing { ProgressView().controlSize(.small) }
                     Text(status)
-                        .font(.callout)
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 13))
+                        .foregroundStyle(EmTheme.secondary)
                 }
             }
 
             if apps.isEmpty {
-                GlassPanel {
-                    EmptyState(
-                        symbol: "books.vertical",
-                        title: "No tracked apps",
-                        message: "Sideload an app and it will appear here. Refresh re-signs and reinstalls before the profile expires."
-                    )
-                }
+                EmptyState(
+                    symbol: "square.grid.2x2",
+                    title: "No tracked apps",
+                    message: "Sideload an app and it will appear here. Refresh re-signs and reinstalls before the profile expires."
+                )
             } else {
-                GlassPanel(padding: 8) {
-                    VStack(spacing: 0) {
-                        ForEach(Array(apps.enumerated()), id: \.element.id) { index, app in
-                            if index > 0 {
-                                Divider().opacity(0.35).padding(.leading, 68)
-                            }
-                            row(app)
-                        }
+                VStack(spacing: 2) {
+                    ForEach(apps) { app in
+                        row(app)
                     }
                 }
             }
@@ -88,39 +86,66 @@ struct LibraryView: View {
 
     // MARK: - Row
 
+    private var setupNotice: String? {
+        guard state.isReady else { return nil }
+        let signedIn = state.account?.authenticated == true
+        let hasDevice = !state.devices.isEmpty
+        if !signedIn && !hasDevice {
+            return "Personal-team signing and connected-device installation are not configured yet."
+        }
+        if !signedIn {
+            return "Personal-team signing is not configured yet."
+        }
+        if !hasDevice {
+            return "Connected-device installation is not configured yet."
+        }
+        return nil
+    }
+
+    private func installedLine(_ app: LibraryApp) -> String {
+        guard let installedAt = app.installedAt else { return app.compactStatus }
+        return "Installed \(Self.installedFormatter.string(from: installedAt))"
+    }
+
+    private static let installedFormatter: DateFormatter = {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "MMM d, yyyy 'at' h:mm a"
+        return formatter
+    }()
+
     private func row(_ app: LibraryApp) -> some View {
         HStack(spacing: 14) {
-            AppIconView(dataURI: app.icon, size: 44)
+            AppIconView(dataURI: app.icon, size: 40)
 
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 8) {
-                    Text(app.displayName)
-                        .font(.system(size: 14, weight: .semibold))
-                    if app.expired {
-                        StatusPill(text: "expired", color: .red)
-                    } else if let days = app.daysLeft, days <= 2 {
-                        StatusPill(text: "expiring", color: .orange)
-                    }
-                }
-                Text(app.bundleId)
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(app.displayName)
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(EmTheme.label)
+                Text(installedLine(app))
+                    .font(.system(size: 12))
+                    .foregroundStyle(EmTheme.secondary)
                     .lineLimit(1)
-                    .truncationMode(.middle)
-                Text(app.compactStatus)
-                    .font(.caption)
-                    .foregroundStyle(app.expired ? .red : .secondary)
             }
 
             Spacer(minLength: 8)
 
-            HStack(spacing: 6) {
+            Text(app.timeLeftText)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(app.expired ? Color.red.opacity(0.9) : EmTheme.secondary)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+
+            HStack(spacing: 4) {
                 Button {
                     Task { await refresh(bundleIds: [app.bundleId]) }
                 } label: {
                     Image(systemName: "arrow.triangle.2.circlepath")
+                        .font(.system(size: 13))
+                        .foregroundStyle(EmTheme.tertiary)
+                        .frame(width: 28, height: 28)
                 }
-                .emCompactButton()
+                .buttonStyle(.plain)
                 .disabled(isRefreshing)
                 .help("Re-sign and reinstall")
 
@@ -128,23 +153,28 @@ struct LibraryView: View {
                     pendingAction = .uninstall(app)
                 } label: {
                     Image(systemName: "trash")
+                        .font(.system(size: 13))
+                        .foregroundStyle(EmTheme.tertiary)
+                        .frame(width: 28, height: 28)
                 }
-                .emCompactButton()
+                .buttonStyle(.plain)
                 .disabled(isRefreshing)
                 .help("Uninstall from the device")
 
                 Menu {
                     Button("Stop tracking") { pendingAction = .forget(app) }
                 } label: {
-                    Image(systemName: "ellipsis.circle")
+                    Image(systemName: "ellipsis")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(EmTheme.tertiary)
+                        .frame(width: 28, height: 28)
                 }
                 .menuStyle(.borderlessButton)
-                .frame(width: 24)
+                .frame(width: 28)
                 .help("More actions")
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 11)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Actions

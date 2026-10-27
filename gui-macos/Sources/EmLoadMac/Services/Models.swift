@@ -305,6 +305,40 @@ struct EmStoreStatus {
     }
 }
 
+// MARK: - JIT
+
+struct JitApp: Identifiable, Hashable {
+    let bundleId: String
+    let name: String?
+    let version: String?
+
+    var id: String { bundleId }
+
+    var displayName: String {
+        guard let name, !name.trimmingCharacters(in: .whitespaces).isEmpty else {
+            return bundleId
+        }
+        return name
+    }
+
+    var versionText: String {
+        guard let version, !version.isEmpty else { return "" }
+        return version
+    }
+
+    static func list(from value: Any) -> [JitApp] {
+        guard let rows = value as? [[String: Any]] else { return [] }
+        return rows.compactMap { row in
+            guard let bundleId = JSON.string(row["bundle_id"]), !bundleId.isEmpty else { return nil }
+            return JitApp(
+                bundleId: bundleId,
+                name: JSON.string(row["name"]),
+                version: JSON.string(row["version"])
+            )
+        }
+    }
+}
+
 // MARK: - Diagnostics
 
 struct DoctorCheck: Identifiable {

@@ -68,6 +68,18 @@ mkdir -p "$MACOS_DIR" "$RESOURCES" "$ENGINE"
 cp "$BIN" "$MACOS_DIR/EmLoadMac"
 cp "$PKG/Resources/Info.plist" "$CONTENTS/Info.plist"
 
+# Release builds stamp the full tag (0.1.0-beta2) so the in-app updater can
+# tell this copy from a later GitHub pre-release. Local builds leave it unset
+# and keep CFBundleShortVersionString.
+if [[ -n "${EMLOAD_RELEASE:-}" ]]; then
+    echo "==> Stamping release $EMLOAD_RELEASE"
+    /usr/libexec/PlistBuddy -c "Delete :EmLoadRelease" "$CONTENTS/Info.plist" 2>/dev/null || true
+    /usr/libexec/PlistBuddy -c "Add :EmLoadRelease string $EMLOAD_RELEASE" "$CONTENTS/Info.plist"
+    if [[ "$EMLOAD_RELEASE" =~ ^([0-9]+\.[0-9]+\.[0-9]+) ]]; then
+        /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${BASH_REMATCH[1]}" "$CONTENTS/Info.plist"
+    fi
+fi
+
 # Sidebar brand mark (see UI/BrandMark.swift).
 if [[ -f "$PKG/Resources/E.png" ]]; then
     cp "$PKG/Resources/E.png" "$RESOURCES/E.png"

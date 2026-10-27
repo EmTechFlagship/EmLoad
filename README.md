@@ -49,6 +49,10 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
   `emload emside-store serve` also exposes a small JSON API so the phone can
   request installs and import EmLoad's signing certificate into LiveContainer.
 - **Live install progress** in both CLI and GUI (upload MBs + installd phases)
+- **JIT**: attach the device debugger to a sideloaded app and detach, which
+  turns on just-in-time compilation until that process quits. Available from
+  `emload jit` and the macOS app's JIT page. Needs Developer Mode and a
+  development signature (`get-task-allow`, which EmLoad's profiles include)
 - **Miscellaneous tweaks (Nugget-based)**: SpringBoard options, daemon toggles
   and Liquid Glass settings applied with the sparserestore backup-restore
   exploit on iOS 17.0 - 18.1, or **BookRestore** (AFC / Restore methods) on
@@ -154,6 +158,7 @@ emload refresh [--all]       re-sign + reinstall recorded apps before expiry
 emload installs              list recorded sideloads with days left
 emload forget <bundle_id>    stop tracking a sideload
 emload apps                  list apps installed on the device
+emload jit <bundle_id>       enable JIT for an installed app
 emload uninstall <bundle_id> remove an app from the device
 emload profiles              list provisioning profiles installed on the device
 emload unprovision <uuid>    remove one provisioning profile (--all removes every one)
@@ -168,6 +173,13 @@ emload gui                   launch the desktop app
 
 Every command accepts `--json` for scripting. Device commands accept `--udid`
 and `--connection usb|wifi|auto`.
+
+> **JIT** (`emload jit <bundle_id>`): mounts the developer disk image, attaches
+> debugserver, then detaches so the app can run JIT until it quits. If the app
+> is not open, EmLoad launches it paused and attaches before its own code runs.
+> `--running-only` refuses to launch it. `--relaunch` quits an already-open
+> copy first, which is what apps that check for JIT at startup need. Requires
+> Developer Mode and a development signature.
 
 > **EmSideStore** options (status / install / watch / serve):
 > - `--ipa PATH` — use a specific SideStore `.ipa` (default: auto-detect, then download)
@@ -289,6 +301,48 @@ The app looks for Python in this order: `EMLOAD_PYTHON`, a venv under
 `PATH`. The bundled engine source still needs a Python with
 `requirements.txt` installed; see [gui-macos/README.md](gui-macos/README.md)
 for details and troubleshooting.
+
+### EmLoadServer
+
+`EmLoadServer/` is the Swift command-line host used with EmLoadStore. It pairs
+a USB-connected iPhone, signs in to Apple through SideSign, and installs
+EmLoadStoreCompanion. The EmLoad window calls the same library: while an
+iPhone or iPad is connected, the sidebar shows **EmLoadStore Setup**.
+
+The store app itself (the macOS library and the iOS companion) lives in
+`EmLoadStoreLoader/`. Open `EmLoadStoreLoader/EmLoadStore.xcodeproj` and select
+**EmLoadStore** for macOS or **EmLoadStoreCompanion** for iOS.
+
+```bash
+./EmLoadServer/scripts/build.sh
+# -> EmLoadServer/.build/emloadserver
+EmLoadServer/.build/emloadserver anisette-servers
+```
+
+The script compiles `x86_64` and `arm64` and joins them with `lipo` when both
+slices succeed. A cross-compile that the toolchain cannot produce is skipped;
+the host architecture is required. `ARCHS="x86_64"` or `ARCHS="arm64"` builds
+one slice. Pairing still needs `idevicepair` on `PATH`. Build it for the Mac you
+are on with:
+
+```bash
+./EmLoadServer/scripts/install-libimobiledevice.sh
+export PATH="$HOME/.local/bin:$PATH"
+```
+
+Other people can use an anisette proxy on your Mac without your Apple ID,
+development certificate, or saved anisette identity. The proxy only forwards
+SideStore v3 requests, and each caller sends their own identifier:
+
+```bash
+EmLoadServer/.build/emloadserver proxy
+# prints http://<this-mac>:1741/<token>
+```
+
+They point their own client at that URL (`emloadserver login --server <url>`,
+or `EMLOAD_ANISETTE_SERVER` for the Python engine). `--open` removes the token
+on a trusted network. `--upstream` selects a different anisette server; the
+default is SideStore (New).
 
 ## How it works
 

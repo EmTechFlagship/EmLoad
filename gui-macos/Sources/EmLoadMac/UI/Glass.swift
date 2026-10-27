@@ -1,6 +1,20 @@
 import AppKit
 import SwiftUI
 
+/// Flat dark chrome matching the EmLoad window: one charcoal surface, a
+/// hairline sidebar split, and a solid blue action color.
+enum EmTheme {
+    static let windowNS = NSColor(srgbRed: 0.173, green: 0.173, blue: 0.180, alpha: 1)
+    static let window = Color(nsColor: windowNS)
+    static let elevated = Color.white.opacity(0.06)
+    static let elevatedPressed = Color.white.opacity(0.10)
+    static let hairline = Color.white.opacity(0.08)
+    static let accent = Color(nsColor: NSColor(srgbRed: 0.039, green: 0.518, blue: 1, alpha: 1))
+    static let label = Color.white.opacity(0.94)
+    static let secondary = Color.white.opacity(0.58)
+    static let tertiary = Color.white.opacity(0.38)
+}
+
 /// True when the process is running on macOS 26 (Tahoe) or newer, where the
 /// Liquid Glass design language and its SwiftUI/AppKit APIs are available.
 enum LiquidGlass {
@@ -94,19 +108,14 @@ struct WindowConfigurator: NSViewRepresentable {
         window.title = "EmLoad"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
         window.toolbarStyle = .unified
         window.isMovableByWindowBackground = false
         window.hasShadow = true
-
-        if LiquidGlass.reducesTransparency {
-            window.isOpaque = true
-            window.backgroundColor = .windowBackgroundColor
-        } else {
-            // Let the glass / vibrancy sample the desktop behind the window.
-            window.isOpaque = false
-            window.backgroundColor = .clear
-        }
+        window.appearance = NSAppearance(named: .darkAqua)
+        window.isOpaque = true
+        window.backgroundColor = EmTheme.windowNS
 
         window.standardWindowButton(.closeButton)?.isHidden = false
         window.standardWindowButton(.miniaturizeButton)?.isHidden = false
@@ -116,16 +125,16 @@ struct WindowConfigurator: NSViewRepresentable {
 
 // MARK: - Glass surfaces
 
-/// A card/panel that uses Liquid Glass on macOS 26 and an ultra-thin material
-/// on macOS 13–15.
+/// A flat raised surface. Same corner and fill as the setup notice in the
+/// library, so cards sit on the charcoal window instead of a glass material.
 struct GlassPanel<Content: View>: View {
-    var padding: CGFloat = 18
-    var cornerRadius: CGFloat = 18
+    var padding: CGFloat = 16
+    var cornerRadius: CGFloat = 12
     private let content: Content
 
     init(
-        padding: CGFloat = 18,
-        cornerRadius: CGFloat = 18,
+        padding: CGFloat = 16,
+        cornerRadius: CGFloat = 12,
         @ViewBuilder content: () -> Content
     ) {
         self.padding = padding
@@ -144,65 +153,89 @@ private struct GlassPanelModifier: ViewModifier {
     let cornerRadius: CGFloat
 
     func body(content: Content) -> some View {
-        if #available(macOS 26.0, *) {
-            content
-                .glassEffect(
-                    .regular,
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.09), lineWidth: 1)
-                )
-        } else {
-            content
-                .background(
-                    .ultraThinMaterial,
-                    in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                )
-                .overlay(
-                    RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
-                        .strokeBorder(Color.white.opacity(0.10), lineWidth: 1)
-                )
-                .shadow(color: .black.opacity(0.08), radius: 12, y: 6)
-        }
+        content
+            .background(
+                EmTheme.elevated,
+                in: RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: cornerRadius, style: .continuous)
+                    .strokeBorder(EmTheme.hairline, lineWidth: 1)
+            )
     }
 }
 
 // MARK: - Buttons
 
 extension View {
-    /// Prominent action button: Liquid Glass on macOS 26, bordered prominent
-    /// everywhere else.
-    @ViewBuilder
+    /// Solid blue action, white label, the same shape as Import IPA.
     func emPrimaryButton() -> some View {
-        if #available(macOS 26.0, *) {
-            self.buttonStyle(.glassProminent)
-        } else {
-            self.buttonStyle(.borderedProminent)
-        }
+        buttonStyle(EmPrimaryButtonStyle())
     }
 
-    /// Secondary action button: Liquid Glass on macOS 26, bordered elsewhere.
-    @ViewBuilder
+    /// Quiet filled button for secondary actions.
     func emSecondaryButton() -> some View {
-        if #available(macOS 26.0, *) {
-            self.buttonStyle(.glass)
-        } else {
-            self.buttonStyle(.bordered)
-        }
+        buttonStyle(EmSecondaryButtonStyle())
     }
 
-    /// Small, unobtrusive button for row actions.
-    @ViewBuilder
+    /// Small text button used inside cards.
     func emCompactButton() -> some View {
-        if #available(macOS 26.0, *) {
-            self.buttonStyle(.glass)
-                .controlSize(.small)
-        } else {
-            self.buttonStyle(.bordered)
-                .controlSize(.small)
-        }
+        buttonStyle(EmCompactButtonStyle())
+    }
+}
+
+private struct EmPrimaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 14)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(EmTheme.accent.opacity(configuration.isPressed ? 0.82 : 1))
+            )
+            .opacity(isEnabled ? 1 : 0.45)
+    }
+}
+
+private struct EmSecondaryButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 13, weight: .medium))
+            .foregroundStyle(EmTheme.label)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 7)
+            .background(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(configuration.isPressed ? EmTheme.elevatedPressed : EmTheme.elevated)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .strokeBorder(EmTheme.hairline, lineWidth: 1)
+            )
+            .opacity(isEnabled ? 1 : 0.45)
+    }
+}
+
+private struct EmCompactButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.system(size: 12, weight: .medium))
+            .foregroundStyle(EmTheme.label)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(configuration.isPressed ? EmTheme.elevatedPressed : EmTheme.elevated)
+            )
+            .opacity(isEnabled ? 1 : 0.45)
     }
 }
 

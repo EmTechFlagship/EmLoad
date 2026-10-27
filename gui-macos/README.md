@@ -16,6 +16,7 @@ python -m emload rpc
       ├── signing / zsign     IPA re-signing
       ├── device / usbmuxd    USB + Wi-Fi device I/O
       ├── sideload / registry install + 7-day refresh
+      ├── jit                 debugserver attach/detach for JIT
       └── nugget              SpringBoard / daemons / Liquid Glass
 ```
 
@@ -60,6 +61,14 @@ named `macos-arm64` or `macos-x86_64` instead. Open the DMG and drag
 app bundle directly. The app is ad-hoc signed, not notarized. Use only on
 macOS 13 or newer, and follow the setup instructions above for the Python
 engine requirements.
+
+Each time the packaged app opens, it asks GitHub for a newer release and
+includes pre-releases (a stable "latest" check would skip betas). When a
+newer build exists, EmLoad offers to download the macOS archive, replace
+this `EmLoad.app`, and reopen. The release build stamps `EmLoadRelease` in
+the bundle (for example `0.1.0-beta2`) so a later beta compares as newer.
+Set `EMLOAD_SKIP_UPDATES=1` to skip that automatic check. Check for Updates
+in the application menu runs the same check on demand.
 
 The build script produces a universal app when both slices compile, and
 otherwise keeps the host architecture. It also compiles `zsign` (from

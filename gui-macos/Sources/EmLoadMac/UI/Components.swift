@@ -12,11 +12,12 @@ struct PageScroll<Content: View>: View {
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
+            VStack(alignment: .leading, spacing: 22) {
                 content
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 18)
+            .padding(.horizontal, 32)
+            .padding(.top, 8)
+            .padding(.bottom, 28)
             .frame(maxWidth: 1180, alignment: .leading)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
@@ -41,13 +42,14 @@ struct PageHeader: View {
     }
 
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 16) {
-            VStack(alignment: .leading, spacing: 3) {
+        HStack(alignment: .center, spacing: 16) {
+            VStack(alignment: .leading, spacing: 6) {
                 Text(title)
-                    .font(.system(size: 22, weight: .semibold, design: .rounded))
+                    .font(.system(size: 28, weight: .semibold))
+                    .foregroundStyle(EmTheme.label)
                 Text(subtitle)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
+                    .font(.system(size: 13))
+                    .foregroundStyle(EmTheme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 12)
@@ -72,6 +74,25 @@ struct SectionLabel: View {
 }
 
 // MARK: - Small pieces
+
+struct NoticeBanner: View {
+    let text: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: "info.circle")
+                .font(.system(size: 14, weight: .regular))
+            Text(text)
+                .font(.system(size: 13))
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(EmTheme.secondary)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(EmTheme.elevated, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+}
 
 struct StatusPill: View {
     let text: String
@@ -143,14 +164,14 @@ struct AppIconView: View {
                     .interpolation(.high)
                     .aspectRatio(contentMode: .fit)
             } else {
-                Image(systemName: "app.dashed")
-                    .font(.system(size: size * 0.45))
-                    .foregroundStyle(.secondary)
+                RoundedRectangle(cornerRadius: size * 0.16, style: .continuous)
+                    .strokeBorder(EmTheme.accent, lineWidth: 1.5)
+                    .frame(width: size * 0.46, height: size * 0.46)
             }
         }
         .frame(width: size, height: size)
-        .background(.quaternary, in: RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
-        .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
+        .background(EmTheme.elevated, in: RoundedRectangle(cornerRadius: size * 0.26, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.26, style: .continuous))
     }
 }
 
@@ -172,7 +193,7 @@ struct ActivityLog: View {
                     .id("bottom")
             }
             .frame(height: height)
-            .background(.black.opacity(0.08), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(Color.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .onChange(of: lines.count) { _ in
                 withAnimation(.easeOut(duration: 0.15)) {
                     proxy.scrollTo("bottom", anchor: .bottom)
