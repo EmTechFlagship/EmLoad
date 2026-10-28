@@ -34,7 +34,7 @@ on:
       channel:
         description: 'Channel label, e.g. "Beta 1" (empty for a final release)'
         required: false
-        default: 'Beta 1'
+        default: 'Beta 2'
       tag:
         description: 'Tag to publish (defaults to v<version>-<slug>)'
         required: false

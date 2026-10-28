@@ -18,7 +18,7 @@ machine-wide changes, uninstall via **Settings → Apps**.
 powershell -File installer\build-installer.ps1
 
 # a different version / channel
-powershell -File installer\build-installer.ps1 -Version 0.1.0 -Prerelease 'Beta 1'
+powershell -File installer\build-installer.ps1 -Version 0.1.0 -Prerelease 'Beta 2'
 
 # reuse the existing dotnet publish output, skip the zip
 powershell -File installer\build-installer.ps1 -SkipPublish -NoZip
@@ -46,10 +46,10 @@ self-contained (`WindowsPackageType=None`).
 | Parameter | Default | Appears in |
 | --- | --- | --- |
 | `-Version` | `0.1.0` | file version, `AppVersion` |
-| `-Prerelease` | `Beta 1` | "EmLoad 0.1.0 Beta 1" in Setup and Apps list |
-| `-OutputTag` | `<version>-<slug>` (`0.1.0-beta1`) | output file names |
+| `-Prerelease` | `Beta 2` | "EmLoad 0.1.0 Beta 2" in Setup and Apps list |
+| `-OutputTag` | `<version>-<slug>` (`0.1.0-beta2`) | output file names |
 
-The Python side carries the matching PEP 440 version (`0.1.0b1` in
+The Python side carries the matching PEP 440 version (`0.1.0b2` in
 `pyproject.toml` and `emload/__init__.py`). Keep the two in sync when cutting a
 release.
 
@@ -60,15 +60,15 @@ release.
 interface:
 
 ```powershell
-git tag v0.1.0-beta1
-git push origin v0.1.0-beta1
+git tag v0.1.0-beta2
+git push origin v0.1.0-beta2
 ```
 
 The tag is parsed into every version string, so nothing needs editing first:
 
 | Tag | Version | Channel | File tag | Python |
 | --- | --- | --- | --- | --- |
-| `v0.1.0-beta1` | `0.1.0` | `Beta 1` | `0.1.0-beta1` | `0.1.0b1` |
+| `v0.1.0-beta2` | `0.1.0` | `Beta 2` | `0.1.0-beta2` | `0.1.0b2` |
 | `v1.2.3-rc2` | `1.2.3` | `RC 2` | `1.2.3-rc2` | `1.2.3rc2` |
 | `v2.0.0` | `2.0.0` | *(none)* | `2.0.0` | `2.0.0` |
 
@@ -149,11 +149,11 @@ double-clickable wrapper that keeps the window open on errors.
 
 ```powershell
 # install without UI; /TASKS also drives which optional deps are installed
-.\dist\EmLoad-Setup-0.1.0-beta1.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART `
+.\dist\EmLoad-Setup-0.1.0-beta2.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART `
     /DIR="$env:TEMP\EmLoad" /TASKS="addpath" /LOG="$env:TEMP\emload-setup.log"
 
 # smoke-test the file layout without waiting for pip
-.\dist\EmLoad-Setup-0.1.0-beta1.exe /VERYSILENT /DIR="$env:TEMP\EmLoad" /SKIPENGINE=1
+.\dist\EmLoad-Setup-0.1.0-beta2.exe /VERYSILENT /DIR="$env:TEMP\EmLoad" /SKIPENGINE=1
 
 # uninstall
 & "$env:TEMP\EmLoad\unins000.exe" /VERYSILENT /SUPPRESSMSGBOXES

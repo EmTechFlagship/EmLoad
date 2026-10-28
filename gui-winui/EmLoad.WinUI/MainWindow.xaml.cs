@@ -55,7 +55,7 @@ public sealed partial class MainWindow : Window
         {
             "Plus" => PlusBenefitsNav,
             "Pro" => ProBenefitsNav,
-            _ => SubscriptionNav,
+            _ => DevicesNav,
         };
         if (Content is FrameworkElement root)
         {
@@ -169,7 +169,7 @@ public sealed partial class MainWindow : Window
     private void ApplyMembershipNavigation(bool selectCurrentPlan)
     {
         var tier = PatreonMembershipState.Tier;
-        SubscriptionNav.Visibility = tier is null ? Visibility.Visible : Visibility.Collapsed;
+        SubscriptionNav.Visibility = Visibility.Collapsed;
         PlusBenefitsNav.Visibility = tier == "Plus" ? Visibility.Visible : Visibility.Collapsed;
         ProBenefitsNav.Visibility = tier == "Pro" ? Visibility.Visible : Visibility.Collapsed;
 
@@ -182,7 +182,7 @@ public sealed partial class MainWindow : Window
         {
             "Plus" => PlusBenefitsNav,
             "Pro" => ProBenefitsNav,
-            _ => SubscriptionNav,
+            _ => DevicesNav,
         };
         if (Nav.SelectedItem != selectedItem)
         {

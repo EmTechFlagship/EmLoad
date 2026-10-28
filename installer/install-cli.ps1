@@ -50,7 +50,7 @@
 param(
     [string]$InstallDir = (Join-Path $env:LOCALAPPDATA 'Programs\EmLoad CLI'),
     [string]$Source,
-    [string]$DisplayVersion = '0.1.0 Beta 1',
+    [string]$DisplayVersion = '0.1.0 Beta 2',
     [string]$ProductName = 'EmLoad CLI',
 
     [switch]$SkipPySide6,

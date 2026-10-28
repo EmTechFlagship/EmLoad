@@ -43,7 +43,7 @@
             DisplayModeChanged="Nav_DisplayModeChanged">
 
             <NavigationView.MenuItems>
-                <NavigationViewItem x:Name="SubscriptionNav" Content="Subscription" Tag="subscription">
+                <NavigationViewItem x:Name="SubscriptionNav" Content="Subscription" Tag="subscription" Visibility="Collapsed">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE734;" Foreground="#FFFFC247" />
                     </NavigationViewItem.Icon>
@@ -58,7 +58,7 @@
                         <FontIcon Glyph="&#xE734;" Foreground="#FFFFC247" />
                     </NavigationViewItem.Icon>
                 </NavigationViewItem>
-                <NavigationViewItem Content="Devices" Tag="devices">
+                <NavigationViewItem x:Name="DevicesNav" Content="Devices" Tag="devices">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE977;" />
                     </NavigationViewItem.Icon>

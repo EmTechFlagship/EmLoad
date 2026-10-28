@@ -20,11 +20,11 @@
     Release version, e.g. 0.1.0.
 
 .PARAMETER Prerelease
-    Human-readable channel, e.g. "Beta 1". Leave empty for a final release.
+    Human-readable channel, e.g. "Beta 2". Leave empty for a final release.
 
 .PARAMETER OutputTag
     Token used in file names. Defaults to "<Version>-<prerelease-slug>",
-    e.g. 0.1.0-beta1.
+    e.g. 0.1.0-beta2.
 
 .PARAMETER Offline
     Download every wheel into the installer so it can install without internet.
@@ -36,7 +36,7 @@
     .\build-installer.ps1
 
 .EXAMPLE
-    .\build-installer.ps1 -Version 0.1.0 -Prerelease 'Beta 1' -OutputTag 0.1.0-beta1
+    .\build-installer.ps1 -Version 0.1.0 -Prerelease 'Beta 2' -OutputTag 0.1.0-beta2
 
 .EXAMPLE
     .\build-installer.ps1 -Offline -NoZip
@@ -44,7 +44,7 @@
 [CmdletBinding()]
 param(
     [string]$Version = '0.1.0',
-    [string]$Prerelease = 'Beta 1',
+    [string]$Prerelease = 'Beta 2',
     [string]$OutputTag,
 
     [string]$Iscc,
