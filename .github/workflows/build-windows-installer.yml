@@ -1,0 +1,134 @@
+name: Build Windows installers
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version
+        required: true
+        default: '0.1.0'
+        type: string
+      channel:
+        description: Release channel
+        required: false
+        default: 'Beta 2'
+        type: string
+      offline:
+        description: Bundle Python dependency wheels for offline installation
+        required: true
+        default: false
+        type: boolean
+      source_branch:
+        description: Branch containing the Windows installer source
+        required: true
+        default: 'dev'
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Windows installers
+    runs-on: windows-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.source_branch }}
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $setup = Join-Path $env:RUNNER_TEMP 'innosetup.exe'
+          $url = 'https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe'
+          Invoke-WebRequest -Uri $url -OutFile $setup -UseBasicParsing
+          $proc = Start-Process -FilePath $setup -Wait -PassThru -ArgumentList @(
+            '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART', '/CURRENTUSER', '/SP-'
+          )
+          if ($proc.ExitCode -ne 0) {
+            throw "Inno Setup installer failed with exit code $($proc.ExitCode)."
+          }
+          $iscc = Join-Path $env:LOCALAPPDATA 'Programs\Inno Setup 7\ISCC.exe'
+          if (-not (Test-Path -LiteralPath $iscc)) { throw "ISCC.exe not found at $iscc." }
+
+      - name: Resolve version
+        id: version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+        run: |
+          $version = $env:INPUT_VERSION
+          if ($version -notmatch '^\d+\.\d+\.\d+$') {
+            throw "Version '$version' must look like 0.1.0."
+          }
+
+          $channel = $env:INPUT_CHANNEL.Trim()
+          $slug = ($channel -replace '[^0-9A-Za-z]', '').ToLowerInvariant()
+          $outputTag = $version
+          if ($slug) { $outputTag = "$version-$slug" }
+
+          $pepSlug = ($slug -replace '[-.]', '') -replace '(?i)^alpha', 'a' -replace '(?i)^beta', 'b'
+          $pythonVersion = "$version$pepSlug"
+          "version=$version" >> $env:GITHUB_OUTPUT
+          "channel=$channel" >> $env:GITHUB_OUTPUT
+          "outputtag=$outputTag" >> $env:GITHUB_OUTPUT
+          "python=$pythonVersion" >> $env:GITHUB_OUTPUT
+          Write-Host "Building EmLoad $version $channel ($outputTag)"
+
+      - name: Set bundled Python version
+        shell: pwsh
+        env:
+          PYTHON_VERSION: ${{ steps.version.outputs.python }}
+        run: |
+          $utf8 = [System.Text.UTF8Encoding]::new($false)
+          $initPath = 'emload/__init__.py'
+          $initText = [System.IO.File]::ReadAllText((Resolve-Path $initPath))
+          $initText = [regex]::Replace($initText, '(?m)^__version__ = "[^"]*"', "__version__ = `"$env:PYTHON_VERSION`"")
+          [System.IO.File]::WriteAllText((Resolve-Path $initPath), $initText, $utf8)
+
+          $projectPath = 'pyproject.toml'
+          $projectText = [System.IO.File]::ReadAllText((Resolve-Path $projectPath))
+          $projectText = [regex]::Replace($projectText, '(?m)^version = "[^"]*"', "version = `"$env:PYTHON_VERSION`"")
+          [System.IO.File]::WriteAllText((Resolve-Path $projectPath), $projectText, $utf8)
+
+      - name: Build installers and portable ZIP
+        shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          CHANNEL: ${{ steps.version.outputs.channel }}
+          OUTPUT_TAG: ${{ steps.version.outputs.outputtag }}
+          OFFLINE: ${{ inputs.offline }}
+        run: |
+          $arguments = @{ Version = $env:VERSION; OutputTag = $env:OUTPUT_TAG }
+          if ($env:CHANNEL) { $arguments['Prerelease'] = $env:CHANNEL }
+          if ($env:OFFLINE -eq 'true') { $arguments['Offline'] = $true }
+
+          ./installer/build-installer.ps1 @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "build-installer.ps1 failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Upload installers
+        uses: actions/upload-artifact@v4
+        with:
+          name: emload-windows-${{ steps.version.outputs.outputtag }}
+          path: |
+            dist/EmLoad-Setup-${{ steps.version.outputs.outputtag }}.exe
+            dist/EmLoad-Cli-Setup-${{ steps.version.outputs.outputtag }}.exe
+            dist/EmLoad-${{ steps.version.outputs.outputtag }}-win-x64.zip
+          if-no-files-found: error
+          retention-days: 30
