@@ -9,4 +9,4 @@ A Python CLI and PySide6 desktop app (AltServer-style) that:
 5. tracks expiries and can refresh apps before their profiles run out.
 """
 
-__version__ = "0.1.0b1"
+__version__ = "0.1.0b3"
