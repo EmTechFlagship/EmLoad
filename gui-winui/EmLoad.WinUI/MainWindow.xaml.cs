@@ -13,6 +13,7 @@ namespace EmLoad.WinUI;
 public sealed partial class MainWindow : Window
 {
     private bool _started;
+    private string? _currentNavigationTag;
 
     public static MainWindow Shell => (MainWindow)App.Current.MainAppWindow!;
 
@@ -49,7 +50,13 @@ public sealed partial class MainWindow : Window
 
         App.Current.State.StatusMessage += OnStatusMessage;
 
-        Nav.SelectedItem = Nav.MenuItems[0];
+        ApplyMembershipNavigation(selectCurrentPlan: false);
+        Nav.SelectedItem = PatreonMembershipState.Tier switch
+        {
+            "Plus" => PlusBenefitsNav,
+            "Pro" => ProBenefitsNav,
+            _ => SubscriptionNav,
+        };
         if (Content is FrameworkElement root)
         {
             root.Loaded += MainWindow_Loaded;
@@ -136,6 +143,8 @@ public sealed partial class MainWindow : Window
         var tag = item.Tag as string ?? "";
         Type? pageType = tag switch
         {
+            "subscription" => typeof(SubscriptionPage),
+            "plusBenefits" or "proBenefits" => typeof(MembershipBenefitsPage),
             "devices" => typeof(DevicesPage),
             "sideload" => typeof(SideloadPage),
             "library" => typeof(LibraryPage),
@@ -145,9 +154,39 @@ public sealed partial class MainWindow : Window
             _ => null,
         };
 
-        if (pageType is not null && ContentFrame.CurrentSourcePageType != pageType)
+        if (pageType is not null && (ContentFrame.CurrentSourcePageType != pageType || tag != _currentNavigationTag))
         {
             ContentFrame.Navigate(pageType);
+            _currentNavigationTag = tag;
+        }
+    }
+
+    public void RefreshMembershipNavigation()
+    {
+        ApplyMembershipNavigation(selectCurrentPlan: true);
+    }
+
+    private void ApplyMembershipNavigation(bool selectCurrentPlan)
+    {
+        var tier = PatreonMembershipState.Tier;
+        SubscriptionNav.Visibility = tier is null ? Visibility.Visible : Visibility.Collapsed;
+        PlusBenefitsNav.Visibility = tier == "Plus" ? Visibility.Visible : Visibility.Collapsed;
+        ProBenefitsNav.Visibility = tier == "Pro" ? Visibility.Visible : Visibility.Collapsed;
+
+        if (!selectCurrentPlan)
+        {
+            return;
+        }
+
+        var selectedItem = tier switch
+        {
+            "Plus" => PlusBenefitsNav,
+            "Pro" => ProBenefitsNav,
+            _ => SubscriptionNav,
+        };
+        if (Nav.SelectedItem != selectedItem)
+        {
+            Nav.SelectedItem = selectedItem;
         }
     }
 

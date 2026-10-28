@@ -3,9 +3,10 @@ import SwiftUI
 struct SidebarView: View {
     @Binding var section: AppSection
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var membership: PatreonSubscription
 
     private var items: [AppSection] {
-        AppSection.visible(deviceConnected: !state.devices.isEmpty)
+        AppSection.visible(deviceConnected: !state.devices.isEmpty, membership: membership)
     }
 
     var body: some View {
@@ -22,6 +23,11 @@ struct SidebarView: View {
                             Image(systemName: item.icon)
                                 .font(.system(size: 14, weight: .medium))
                                 .frame(width: 18)
+                                .foregroundStyle(
+                                    item == .subscription || item == .plusBenefits || item == .proBenefits
+                                        ? Color.yellow
+                                        : (section == item ? EmTheme.accent : EmTheme.label)
+                                )
                             Text(item.title)
                                 .font(.system(size: 13, weight: .medium))
                                 .lineLimit(1)
@@ -31,6 +37,21 @@ struct SidebarView: View {
                         .padding(.horizontal, 10)
                         .padding(.vertical, 7)
                         .contentShape(Rectangle())
+                        .background {
+                            if section == item {
+                                if #available(macOS 26.0, *) {
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(EmTheme.accent.opacity(0.18))
+                                        .glassEffect(
+                                            .regular.tint(EmTheme.accent.opacity(0.28)).interactive(),
+                                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        )
+                                } else {
+                                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                                        .fill(EmTheme.accent.opacity(0.16))
+                                }
+                            }
+                        }
                     }
                     .buttonStyle(.plain)
                     .help(item.subtitle)
@@ -45,6 +66,13 @@ struct SidebarView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
         .frame(maxHeight: .infinity, alignment: .topLeading)
+        .background {
+            if LiquidGlass.reducesTransparency {
+                EmTheme.window
+            } else {
+                VisualEffectBackdrop(material: .sidebar, blending: .withinWindow)
+            }
+        }
     }
 }
 

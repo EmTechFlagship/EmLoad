@@ -1,0 +1,10 @@
+name = "emload-patreon"
+main = "src/index.js"
+compatibility_date = "2026-10-27"
+
+[vars]
+PATREON_CLIENT_ID = "TamBND5_6Ob9f_UqU5CnWKkbCKZxdcRPObzijzI6Yw1bi2-868TgH3Aibi0HvQF0"
+
+[[kv_namespaces]]
+binding = "PATREON_SESSIONS"
+id = "baf2963f3baf48faa2042329623c6758"

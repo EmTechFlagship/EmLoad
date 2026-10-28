@@ -182,7 +182,7 @@ struct IpaSummary {
         build = JSON.string(dictionary["build"])
         minimumOS = JSON.string(dictionary["minimum_os"])
         platform = JSON.string(dictionary["platform"])
-        encrypted = JSON.bool(dictionary["has_sc_info"]) ?? false
+        encrypted = JSON.bool(dictionary["encrypted"]) ?? false
         extensions = JSON.strings(dictionary["extensions"])
         icon = JSON.string(dictionary["icon"])
     }

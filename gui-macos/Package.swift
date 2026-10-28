@@ -4,9 +4,7 @@ import PackageDescription
 let package = Package(
     name: "EmLoadMac",
     platforms: [
-        // Liquid Glass is enabled at runtime on macOS 26+, while the same
-        // binary still runs on macOS 13 with the older material fallback.
-        .macOS(.v13),
+        .macOS("15.0"),
     ],
     products: [
         .executable(name: "EmLoadMac", targets: ["EmLoadMac"]),

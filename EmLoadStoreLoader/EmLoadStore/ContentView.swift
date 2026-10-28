@@ -166,6 +166,8 @@ private struct CompanionView: View {
                 .tabItem { Label("Settings", systemImage: "gearshape.fill") }
                 .tag(AppTab.settings)
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(uiColor: .systemGroupedBackground).ignoresSafeArea())
         .tint(.indigo)
         .alert(
             "EmLoadStore",

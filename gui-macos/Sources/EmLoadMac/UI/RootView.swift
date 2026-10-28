@@ -34,8 +34,12 @@ extension Notification.Name {
 }
 
 enum AppSection: String, CaseIterable, Identifiable {
+    case subscription
+    case plusBenefits
+    case proBenefits
     case devices
     case storeSetup
+    case store
     case sideload
     case library
     case jit
@@ -48,13 +52,22 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     /// Sections offered in the sidebar. Misc Tweaks stays implemented, and
     /// EmLoadStore Setup appears only while an iPhone or iPad is connected.
-    static func visible(deviceConnected: Bool) -> [AppSection] {
+    @MainActor
+    static func visible(deviceConnected: Bool, membership: PatreonSubscription) -> [AppSection] {
         allCases.filter { section in
             switch section {
+            case .subscription:
+                return false
+            case .plusBenefits:
+                return membership.normalizedTier == "plus"
+            case .proBenefits:
+                return membership.normalizedTier == "pro"
             case .misc:
                 return false
             case .storeSetup:
-                return deviceConnected
+                return deviceConnected && membership.canInstallEmLoadStore
+            case .jit:
+                return true
             default:
                 return true
             }
@@ -63,8 +76,12 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .subscription: return "Subscription"
+        case .plusBenefits: return "EmLoad Plus"
+        case .proBenefits: return "EmLoad Pro"
         case .devices: return "Devices"
         case .storeSetup: return "EmLoadStore Setup"
+        case .store: return "Store"
         case .sideload: return "Sideload"
         case .library: return "Library"
         case .jit: return "JIT"
@@ -77,10 +94,18 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var subtitle: String {
         switch self {
+        case .subscription:
+            return "EmLoad Plus and EmLoad Pro memberships."
+        case .plusBenefits:
+            return "Manage your EmLoad Plus benefits."
+        case .proBenefits:
+            return "Manage your EmLoad Pro benefits."
         case .devices:
             return "Phones and iPads visible to EmLoad over USB or Wi-Fi."
         case .storeSetup:
             return "Sign in with EmLoadServer, install EmLoadStoreCompanion, and export a pairing record."
+        case .store:
+            return "Download an IPA and send it to Sideload."
         case .sideload:
             return "Sign and install an .ipa with your own Apple ID. Signatures last seven days."
         case .library:
@@ -100,8 +125,10 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var icon: String {
         switch self {
+        case .subscription, .plusBenefits, .proBenefits: return "crown.fill"
         case .devices: return "iphone"
         case .storeSetup: return "app.badge"
+        case .store: return "bag"
         case .sideload: return "square.and.arrow.down"
         case .library: return "square.grid.2x2"
         case .jit: return "bolt"
@@ -115,6 +142,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 
 struct RootView: View {
     @EnvironmentObject private var state: AppState
+    @StateObject private var membership = PatreonSubscription()
     @State private var section: AppSection = AppSection(
         rawValue: ProcessInfo.processInfo.environment["EMLOAD_SECTION"] ?? ""
     ) ?? .devices
@@ -152,6 +180,7 @@ struct RootView: View {
         .tint(EmTheme.accent)
         .ignoresSafeArea()
         .frame(minWidth: 1_040, minHeight: 700)
+        .environmentObject(membership)
         .task { await state.initialize() }
         .task { await state.checkForAppUpdate() }
         .sheet(item: $state.availableUpdate) { update in
@@ -182,6 +211,20 @@ struct RootView: View {
                 section = .devices
             }
         }
+        .onChange(of: membership.tier) { tier in
+            if tier?.lowercased() == "plus" {
+                section = .plusBenefits
+            } else if tier?.lowercased() == "pro" {
+                section = .proBenefits
+            } else if section == .plusBenefits || section == .proBenefits {
+                section = .devices
+            } else {
+                reconcileSection()
+            }
+        }
+        .onChange(of: membership.jitBenefitEnabled) { _ in reconcileSection() }
+        .onChange(of: membership.emLoadStoreBenefitEnabled) { _ in reconcileSection() }
+        .onAppear { reconcileSection() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             state.shutdown()
         }
@@ -202,6 +245,7 @@ struct RootView: View {
         HStack(spacing: 0) {
             if sidebarVisible {
                 SidebarView(section: $section)
+                    .environmentObject(membership)
                     .frame(width: 220)
                     .transition(.move(edge: .leading).combined(with: .opacity))
 
@@ -224,8 +268,21 @@ struct RootView: View {
     @ViewBuilder
     private var page: some View {
         switch section {
+        case .subscription: SubscriptionView()
+        case .plusBenefits: MembershipBenefitsView()
+        case .proBenefits: MembershipBenefitsView()
         case .devices: DevicesView()
-        case .storeSetup: EmLoadStoreSetupView()
+        case .storeSetup:
+            if membership.canInstallEmLoadStore {
+                EmLoadStoreSetupView()
+            } else {
+                MembershipBenefitsView()
+            }
+        case .store:
+            IPAStoreView { path in
+                state.pendingIPAPath = path
+                section = .sideload
+            }
         case .sideload: SideloadView()
         case .library: LibraryView()
         case .jit: JitView()
@@ -233,6 +290,18 @@ struct RootView: View {
         case .account: AccountView()
         case .settings: SettingsView()
         case .diagnostics: DiagnosticsView()
+        }
+    }
+
+    private func reconcileSection() {
+        let visible = AppSection.visible(deviceConnected: !state.devices.isEmpty, membership: membership)
+        guard !visible.contains(section) else { return }
+        if membership.normalizedTier == "plus" {
+            section = .plusBenefits
+        } else if membership.normalizedTier == "pro" {
+            section = .proBenefits
+        } else {
+            section = .devices
         }
     }
 }

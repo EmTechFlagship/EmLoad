@@ -300,6 +300,10 @@ def inspect(ipa_path: str) -> dict[str, Any]:
             app = _app_relpath(names, name)
             info = plistlib.loads(zf.read(f"{app}/Info.plist"))
             icon = _extract_icon(zf, names, app, info)
+            executable = info.get("CFBundleExecutable")
+            encrypted = None
+            if isinstance(executable, str) and f"{app}/{executable}" in names:
+                encrypted = is_encrypted_data(zf.read(f"{app}/{executable}"))
     except IpaError:
         raise  # already phrased for a person
     except FileNotFoundError:
@@ -332,6 +336,7 @@ def inspect(ipa_path: str) -> dict[str, Any]:
         "platform": _platform(info),
         "has_embedded_provision": f"{app}/embedded.mobileprovision" in names,
         "has_sc_info": has_sc_info,
+        "encrypted": encrypted,
         "frameworks": frameworks,
         "extensions": extensions,
         "has_watch_app": has_watch,
@@ -399,21 +404,18 @@ def _read_thin_cryptid(data: bytes, base: int) -> bool | None:
             break
         cmd, cmdsize = struct.unpack_from(endian + "II", data, offset)
         if cmd in (_LC_ENCRYPTION_INFO, _LC_ENCRYPTION_INFO_64):
+            if cmdsize < 20 or offset + 20 > len(data):
+                return None
             cryptid = struct.unpack_from(endian + "I", data, offset + 16)[0]
             return cryptid != 0
-        if cmdsize == 0:
+        if cmdsize < 8 or offset + cmdsize > len(data):
             break
         offset += cmdsize
     return False
 
 
-def is_encrypted(macho_path: Path) -> bool | None:
-    """Return True/False if a Mach-O is FairPlay-encrypted, or None if unknown."""
-    try:
-        with open(macho_path, "rb") as fh:
-            data = fh.read(1 << 20)
-    except OSError:
-        return None
+def is_encrypted_data(data: bytes) -> bool | None:
+    """Return whether Mach-O bytes have a FairPlay cryptid, or None if unknown."""
     if len(data) < 8:
         return None
 
@@ -439,6 +441,14 @@ def is_encrypted(macho_path: Path) -> bool | None:
     if magic in _THIN_MAGICS:
         return _read_thin_cryptid(data, 0)
     return None
+
+
+def is_encrypted(macho_path: Path) -> bool | None:
+    """Return True/False if a Mach-O is FairPlay-encrypted, or None if unknown."""
+    try:
+        return is_encrypted_data(macho_path.read_bytes())
+    except OSError:
+        return None
 
 
 def _zip_dir(source: Path, output: str, compresslevel: int) -> None:

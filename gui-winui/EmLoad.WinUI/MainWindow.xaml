@@ -43,6 +43,21 @@
             DisplayModeChanged="Nav_DisplayModeChanged">
 
             <NavigationView.MenuItems>
+                <NavigationViewItem x:Name="SubscriptionNav" Content="Subscription" Tag="subscription">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE734;" Foreground="#FFFFC247" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="PlusBenefitsNav" Content="EmLoad Plus" Tag="plusBenefits" Visibility="Collapsed">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE734;" Foreground="#FFFFC247" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
+                <NavigationViewItem x:Name="ProBenefitsNav" Content="EmLoad Pro" Tag="proBenefits" Visibility="Collapsed">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE734;" Foreground="#FFFFC247" />
+                    </NavigationViewItem.Icon>
+                </NavigationViewItem>
                 <NavigationViewItem Content="Devices" Tag="devices">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE977;" />

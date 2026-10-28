@@ -23,10 +23,8 @@ python -m emload rpc
 ## Requirements
 
 - Apple silicon or Intel Mac
-- macOS 13 Ventura or newer
-- Xcode 15+ command line tools (Xcode 26 is needed to *compile* the Liquid
-  Glass APIs; older toolchains can build the macOS 13 fallback if you remove the
-  macOS 26 branches)
+- macOS 15 Sequoia or newer
+- Xcode 16 or newer
 - Python 3.10+ with the engine installed:
   ```bash
   python3 -m venv .venv
@@ -59,7 +57,7 @@ the same prerelease as the Windows installers. A single-architecture build is
 named `macos-arm64` or `macos-x86_64` instead. Open the DMG and drag
 `EmLoad.app` onto the Applications shortcut to install. The ZIP contains the
 app bundle directly. The app is ad-hoc signed, not notarized. Use only on
-macOS 13 or newer, and follow the setup instructions above for the Python
+macOS 15 or newer, and follow the setup instructions above for the Python
 engine requirements.
 
 Each time the packaged app opens, it asks GitHub for a newer release and
@@ -98,13 +96,14 @@ installation issue, not an EmLoad one.
 
 ## Liquid Glass
 
-The window is built for macOS 26 (Tahoe) and degrades cleanly:
+The app targets macOS 15 (Sequoia). On macOS 26 (Tahoe), it uses native Liquid
+Glass APIs; macOS 15 uses the available material and styling fallbacks:
 
-| Surface | macOS 26+ | macOS 13–15 |
+| Surface | macOS 26+ | macOS 15 |
 | --- | --- | --- |
 | Window backdrop | `NSGlassEffectView` over `NSVisualEffectView` | `NSVisualEffectView` (`.underWindowBackground`) |
-| Sidebar selection | `.glassEffect(.regular.interactive())` | `.quaternary` capsule |
-| Cards | `.glassEffect(.regular)` | `.ultraThinMaterial` + hairline stroke |
+| Sidebar | Native `.sidebar` vibrancy, with Liquid Glass selection | Sidebar vibrancy with a tinted selection |
+| Cards | `.glassEffect(.regular)` | Material with a hairline stroke |
 | Primary buttons | `.buttonStyle(.glassProminent)` | `.borderedProminent` |
 | Secondary buttons | `.buttonStyle(.glass)` | `.bordered` |
 
@@ -113,8 +112,8 @@ hidden title bar and full-size content view, so the glass reaches behind the
 traffic lights and the desktop shows through. If **Reduce Transparency** is
 enabled, the app uses a solid window background instead.
 
-All macOS 26 API use is behind `if #available(macOS 26.0, *)`; the deployment
-target is macOS 13.
+macOS 26 APIs remain availability-checked, so the app can be built with the
+macOS 15 deployment target and gains Liquid Glass when running on macOS 26.
 
 ## Python discovery
 

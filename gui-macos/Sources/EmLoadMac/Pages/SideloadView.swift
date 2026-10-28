@@ -71,7 +71,9 @@ struct SideloadView: View {
                 loadedDefaults = true
             }
             if selectedUDID == nil { selectedUDID = state.devices.first?.udid }
+            consumePendingIPA()
         }
+        .onChange(of: state.pendingIPAPath) { _ in consumePendingIPA() }
         .onChange(of: state.devices) { devices in
             if let selectedUDID, devices.contains(where: { $0.udid == selectedUDID }) { return }
             selectedUDID = devices.first?.udid
@@ -332,6 +334,12 @@ struct SideloadView: View {
             append("Could not read the IPA: \(error.localizedDescription)")
             state.report(error)
         }
+    }
+
+    private func consumePendingIPA() {
+        guard let path = state.pendingIPAPath else { return }
+        state.pendingIPAPath = nil
+        Task { await loadIPA(path) }
     }
 
     private func runSideload() async {

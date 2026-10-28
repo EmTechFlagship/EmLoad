@@ -223,7 +223,7 @@ def run_sideload(
     udid = resolve_udid(udid)
 
     info = ipa_module.inspect(ipa_path)
-    if info.get("has_sc_info"):
+    if info.get("encrypted") is True:
         raise signing.SigningError(
             "This IPA is App Store-encrypted (FairPlay) and cannot be sideloaded; "
             "use a decrypted IPA."

@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 
 struct EmLoadStoreSetupView: View {
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var membership: PatreonSubscription
 
     @StateObject private var signIn = StoreSignInCoordinator()
     @State private var account: EmLoadStoreSetup.Account?
@@ -16,45 +17,54 @@ struct EmLoadStoreSetupView: View {
 
     var body: some View {
         PageScroll {
-            PageHeader(
-                title: "EmLoadStore Setup",
-                subtitle: "Sign in on this Mac, install EmLoadStoreCompanion, and save a pairing record for the connected device."
-            ) {
-                if account == nil {
-                    Button {
-                        showSignIn = true
-                    } label: {
-                        Label("Sign In", systemImage: "person.badge.key")
-                    }
-                    .emPrimaryButton()
-                    .disabled(busy)
-                } else {
-                    Button("Sign Out") {
-                        signOut()
-                    }
-                    .emSecondaryButton()
-                    .disabled(busy)
-                }
-            }
-
-            accountCard
-            deviceCard
-
-            if !activity.isEmpty {
-                GlassPanel {
-                    VStack(alignment: .leading, spacing: 10) {
-                        HStack {
-                            SectionLabel("Activity")
-                            Spacer()
-                            Button("Clear") { activity.removeAll() }
-                                .emCompactButton()
+            if !membership.canInstallEmLoadStore {
+                PageHeader(
+                    title: "EmLoadStore unavailable",
+                    subtitle: membership.normalizedTier == "pro"
+                        ? "EmLoad Pro includes EmLoad Plus benefits, but companion installs are not available on this plan."
+                        : "EmLoadStore is turned off in your EmLoad Plus benefit settings."
+                )
+            } else {
+                PageHeader(
+                    title: "EmLoadStore Setup",
+                    subtitle: "Sign in on this Mac, install EmLoadStoreCompanion, and save a pairing record for the connected device."
+                ) {
+                    if account == nil {
+                        Button {
+                            showSignIn = true
+                        } label: {
+                            Label("Sign In", systemImage: "person.badge.key")
                         }
-                        ActivityLog(lines: activity, height: 150)
+                        .emPrimaryButton()
+                        .disabled(busy)
+                    } else {
+                        Button("Sign Out") {
+                            signOut()
+                        }
+                        .emSecondaryButton()
+                        .disabled(busy)
+                    }
+                }
+
+                accountCard
+                deviceCard
+
+                if !activity.isEmpty {
+                    GlassPanel {
+                        VStack(alignment: .leading, spacing: 10) {
+                            HStack {
+                                SectionLabel("Activity")
+                                Spacer()
+                                Button("Clear") { activity.removeAll() }
+                                    .emCompactButton()
+                            }
+                            ActivityLog(lines: activity, height: 150)
+                        }
                     }
                 }
             }
         }
-        .task { refreshAccount() }
+        .task { if membership.canInstallEmLoadStore { refreshAccount() } }
         .onChange(of: usbDevices.map(\.udid)) { udids in
             if let selectedUDID, udids.contains(selectedUDID) { return }
             selectedUDID = udids.first
@@ -181,6 +191,7 @@ struct EmLoadStoreSetupView: View {
     }
 
     private func installCompanion() async {
+        guard membership.canInstallEmLoadStore else { return }
         let targets = usbDevices.map {
             EmLoadStoreSetup.Device(
                 udid: $0.udid,

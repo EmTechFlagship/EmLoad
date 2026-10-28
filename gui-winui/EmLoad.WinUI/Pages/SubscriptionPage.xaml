@@ -1,0 +1,61 @@
+<Page
+    x:Class="EmLoad.WinUI.Pages.SubscriptionPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer>
+        <StackPanel MaxWidth="900" Padding="36,32" Spacing="20">
+            <StackPanel Spacing="8">
+                <TextBlock Text="♛  SUBSCRIPTION" Foreground="#FFFFC247" FontSize="12" FontWeight="SemiBold" />
+                <TextBlock Text="Choose your EmLoad plan" FontSize="30" FontWeight="Bold" />
+                <TextBlock Text="Support EmLoad through the EmAppleFlagship Patreon page. Your Patreon membership is the source of subscription access."
+                           TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="14" />
+            </StackPanel>
+
+            <Grid ColumnSpacing="16">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Padding="20" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="10">
+                        <FontIcon Glyph="&#xE734;" Foreground="#FFFFC247" FontSize="20" />
+                        <TextBlock Text="EmLoad Plus" FontSize="20" FontWeight="SemiBold" />
+                        <TextBlock Text="Requires an active Em Basic subscription on EmAppleFlagship Patreon." TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </Border>
+                <Border Grid.Column="1" Padding="20" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                    <StackPanel Spacing="10">
+                        <FontIcon Glyph="&#xE735;" Foreground="#FFFFC247" FontSize="20" />
+                        <TextBlock Text="EmLoad Pro" FontSize="20" FontWeight="SemiBold" />
+                        <TextBlock Text="Requires an active Em Pro subscription on EmAppleFlagship Patreon." TextWrapping="Wrap"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <Border Padding="20" CornerRadius="12" Background="{ThemeResource CardBackgroundFillColorDefaultBrush}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Connect your Patreon membership" FontSize="16" FontWeight="SemiBold" />
+                    <TextBlock Text="Subscribe to Em Basic for EmLoad Plus or Em Pro for EmLoad Pro, then connect the Patreon account that holds your membership."
+                               TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                    <HyperlinkButton Content="View membership tiers on Patreon"
+                                     NavigateUri="https://www.patreon.com/cw/EmAppleFlagship/membership" />
+                    <Button x:Name="ConnectPatreonButton" Content="Connect Patreon" Click="ConnectPatreon_Click"
+                            HorizontalAlignment="Left" Margin="0,8,0,0" />
+                    <TextBlock x:Name="MembershipStatus" Text="Connect Patreon to check your membership."
+                               TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" />
+                    <TextBlock Text="Patreon OAuth callback URL" FontSize="12" FontWeight="SemiBold" Margin="0,8,0,0" />
+                    <TextBlock Text="https://emload-patreon.ios11emiry.workers.dev/patreon/callback"
+                               FontFamily="Consolas" TextWrapping="Wrap" IsTextSelectionEnabled="True" />
+                    <TextBlock Text="This callback is handled by the EmLoad Patreon Worker. Register the URL in Patreon’s client settings."
+                               TextWrapping="Wrap" Foreground="{ThemeResource TextFillColorSecondaryBrush}" FontSize="12" />
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</Page>

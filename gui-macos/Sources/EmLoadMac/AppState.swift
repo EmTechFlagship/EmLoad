@@ -19,6 +19,7 @@ final class AppState: ObservableObject {
     @Published var showLogin = false
     @Published var emstore: EmStoreStatus?
     @Published var availableUpdate: AppUpdate?
+    @Published var pendingIPAPath: String?
 
     private(set) var engine: RPCClient?
     private var started = false
