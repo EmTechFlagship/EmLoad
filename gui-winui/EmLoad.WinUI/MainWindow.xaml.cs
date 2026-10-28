@@ -184,7 +184,7 @@ public sealed partial class MainWindow : Window
             "Pro" => ProBenefitsNav,
             _ => DevicesNav,
         };
-        if (Nav.SelectedItem != selectedItem)
+        if (!ReferenceEquals(Nav.SelectedItem, selectedItem))
         {
             Nav.SelectedItem = selectedItem;
         }
