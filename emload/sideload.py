@@ -13,6 +13,7 @@ reporting/cleanup of a folder full of kept IPAs.
 from __future__ import annotations
 
 import datetime
+import ctypes
 import os
 import shutil
 import stat
@@ -157,6 +158,16 @@ def _scratch_roots(target: Path, deepest: int) -> list[Path]:
         drive_root = Path(tempfile.gettempdir()).anchor
         if drive_root:
             candidates.extend((Path(drive_root) / "eml", Path(os.environ.get("SystemRoot", r"C:\\Windows")) / "Temp"))
+        # A normal user cannot always create C:\\eml, while their Temp folder
+        # is writable but often too long for deeply nested app bundles. Use
+        # its 8.3 alias when Windows has one.
+        short_temp = _short_windows_path(Path(tempfile.gettempdir()))
+        if short_temp is not None:
+            candidates.append(short_temp)
+    elif target not in candidates:
+        # MAX_PATH is specific to zsign's Windows file handling. On macOS and
+        # other platforms, keep scratch beside the chosen output directory.
+        candidates.insert(0, target)
     candidates.append(Path(tempfile.gettempdir()))
 
     unique: list[Path] = []
@@ -164,6 +175,28 @@ def _scratch_roots(target: Path, deepest: int) -> list[Path]:
         if candidate not in unique:
             unique.append(candidate)
     return unique
+
+
+def _short_windows_path(path: Path) -> Path | None:
+    """Return a Windows 8.3 alias for an existing path when available."""
+    if os.name != "nt":
+        return None
+    try:
+        get_short_path = ctypes.windll.kernel32.GetShortPathNameW
+        get_short_path.argtypes = (ctypes.c_wchar_p, ctypes.c_wchar_p, ctypes.c_uint)
+        get_short_path.restype = ctypes.c_uint
+        source = str(path)
+        required = get_short_path(source, None, 0)
+        if not required:
+            return None
+        buffer = ctypes.create_unicode_buffer(required)
+        written = get_short_path(source, buffer, required)
+        if not written or written >= required:
+            return None
+        alias = Path(buffer.value)
+        return alias if len(str(alias)) < len(source) else None
+    except (AttributeError, OSError, TypeError, ValueError):
+        return None
 
 
 def _open_signed_dir(directory: str | None, deepest: int = 0) -> tuple[Path, Path]:
@@ -185,7 +218,7 @@ def _open_signed_dir(directory: str | None, deepest: int = 0) -> tuple[Path, Pat
         except OSError as exc:
             failures.append(f"{root}: {exc.strerror or exc}")
             continue
-        if not deepest or len(str(scratch)) + _ZSIGN_HEADROOM + deepest <= _MAX_PATH:
+        if os.name != "nt" or not deepest or len(str(scratch)) + _ZSIGN_HEADROOM + deepest <= _MAX_PATH:
             return target, scratch
         shutil.rmtree(scratch, ignore_errors=True)
 

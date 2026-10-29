@@ -4,7 +4,7 @@ import PackageDescription
 let package = Package(
     name: "EmLoadMac",
     platforms: [
-        .macOS("15.0"),
+        .macOS("14.0"),
     ],
     products: [
         .executable(name: "EmLoadMac", targets: ["EmLoadMac"]),

@@ -23,7 +23,7 @@ python -m emload rpc
 ## Requirements
 
 - Apple silicon or Intel Mac
-- macOS 15 Sequoia or newer
+- macOS 14 Sonoma or newer
 - Xcode 16 or newer
 - Python 3.10+ with the engine installed:
   ```bash
@@ -57,7 +57,7 @@ the same prerelease as the Windows installers. A single-architecture build is
 named `macos-arm64` or `macos-x86_64` instead. Open the DMG and drag
 `EmLoad.app` onto the Applications shortcut to install. The ZIP contains the
 app bundle directly. The app is ad-hoc signed, not notarized. Use only on
-macOS 15 or newer, and follow the setup instructions above for the Python
+macOS 14 or newer, and follow the setup instructions above for the Python
 engine requirements.
 
 Each time the packaged app opens, it asks GitHub for a newer release and
@@ -96,10 +96,10 @@ installation issue, not an EmLoad one.
 
 ## Liquid Glass
 
-The app targets macOS 15 (Sequoia). On macOS 26 (Tahoe), it uses native Liquid
-Glass APIs; macOS 15 uses the available material and styling fallbacks:
+The app targets macOS 14 (Sonoma). On macOS 26 (Tahoe), it uses native Liquid
+Glass APIs; macOS 14–25 use the available material and styling fallbacks:
 
-| Surface | macOS 26+ | macOS 15 |
+| Surface | macOS 26+ | macOS 14–25 |
 | --- | --- | --- |
 | Window backdrop | `NSGlassEffectView` over `NSVisualEffectView` | `NSVisualEffectView` (`.underWindowBackground`) |
 | Sidebar | Native `.sidebar` vibrancy, with Liquid Glass selection | Sidebar vibrancy with a tinted selection |
@@ -113,7 +113,7 @@ traffic lights and the desktop shows through. If **Reduce Transparency** is
 enabled, the app uses a solid window background instead.
 
 macOS 26 APIs remain availability-checked, so the app can be built with the
-macOS 15 deployment target and gains Liquid Glass when running on macOS 26.
+macOS 14 deployment target and gains Liquid Glass when running on macOS 26.
 
 ## Python discovery
 

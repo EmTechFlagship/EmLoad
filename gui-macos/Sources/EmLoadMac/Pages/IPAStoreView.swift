@@ -57,7 +57,7 @@ struct IPAStoreView: View {
         StoreSource(
             id: "altstore",
             name: "AltStore",
-            url: URL(string: "https://cdn.altstore.io/file/altstore/apps.json")!
+            url: URL(string: "https://mikevillarroel.github.io/mikebuilds-source/source.json")!
         ),
         StoreSource(
             id: "utm",

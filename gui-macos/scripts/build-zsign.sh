@@ -20,7 +20,7 @@ CACHE="$PKG/.build/zsign-deps"
 OPENSSL_VERSION="${OPENSSL_VERSION:-3.5.4}"
 DEST=""
 HOST="$(uname -m)"
-MIN_OS="15.0"
+MIN_OS="14.0"
 JOBS="$(sysctl -n hw.ncpu 2>/dev/null || printf '4')"
 
 usage() {
@@ -252,4 +252,15 @@ if command -v codesign >/dev/null 2>&1; then
 fi
 
 echo "==> zsign ($(printf '%s ' "${BUILT[@]}")) -> $DEST"
-"$DEST" -v
+can_run=0
+for arch in "${BUILT[@]}"; do
+    if [[ "$arch" == "$HOST" ]]; then
+        can_run=1
+        break
+    fi
+done
+if [[ "$can_run" == "1" ]]; then
+    "$DEST" -v
+else
+    echo "==> Skipping zsign execution check; no $HOST slice was requested"
+fi

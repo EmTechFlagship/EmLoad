@@ -109,13 +109,16 @@ cp "$ZSIGN_OUT" "$ENGINE/emload/vendor/zsign"
 chmod 755 "$ENGINE/emload/vendor/zsign"
 
 # CLI `emload` looks in Application Support before PATH. Install the same
-# binary there so signing works outside the app bundle too.
-ZSIGN_DATA="$HOME/Library/Application Support/EmLoad/bin"
-mkdir -p "$ZSIGN_DATA"
-cp "$ZSIGN_OUT" "$ZSIGN_DATA/zsign"
-chmod 755 "$ZSIGN_DATA/zsign"
-if command -v codesign >/dev/null 2>&1; then
-    codesign --force --sign - "$ZSIGN_DATA/zsign" >/dev/null 2>&1 || true
+# binary there so signing works outside the app bundle too. Cross-architecture
+# packaging can skip replacing the host's CLI helper.
+if [[ "${EMLOAD_SKIP_ZSIGN_INSTALL:-0}" != "1" ]]; then
+    ZSIGN_DATA="$HOME/Library/Application Support/EmLoad/bin"
+    mkdir -p "$ZSIGN_DATA"
+    cp "$ZSIGN_OUT" "$ZSIGN_DATA/zsign"
+    chmod 755 "$ZSIGN_DATA/zsign"
+    if command -v codesign >/dev/null 2>&1; then
+        codesign --force --sign - "$ZSIGN_DATA/zsign" >/dev/null 2>&1 || true
+    fi
 fi
 
 if [[ -f "$PKG/Resources/EmLoad.icns" ]]; then
