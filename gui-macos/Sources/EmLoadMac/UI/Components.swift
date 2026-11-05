@@ -1,12 +1,25 @@
 import AppKit
 import SwiftUI
 
+private struct WindowSectionTitleKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    var windowSectionTitle: String? {
+        get { self[WindowSectionTitleKey.self] }
+        set { self[WindowSectionTitleKey.self] = newValue }
+    }
+}
+
 // MARK: - Layout
 
 struct PageScroll<Content: View>: View {
+    private let horizontalPadding: CGFloat
     private let content: Content
 
-    init(@ViewBuilder content: () -> Content) {
+    init(horizontalPadding: CGFloat = 32, @ViewBuilder content: () -> Content) {
+        self.horizontalPadding = horizontalPadding
         self.content = content()
     }
 
@@ -15,7 +28,7 @@ struct PageScroll<Content: View>: View {
             VStack(alignment: .leading, spacing: 22) {
                 content
             }
-            .padding(.horizontal, 32)
+            .padding(.horizontal, horizontalPadding)
             .padding(.top, 8)
             .padding(.bottom, 28)
             .frame(maxWidth: 1180, alignment: .leading)
@@ -25,6 +38,7 @@ struct PageScroll<Content: View>: View {
 }
 
 struct PageHeader: View {
+    @Environment(\.windowSectionTitle) private var windowSectionTitle
     let title: String
     let subtitle: String
     var action: AnyView?
@@ -44,9 +58,11 @@ struct PageHeader: View {
     var body: some View {
         HStack(alignment: .center, spacing: 16) {
             VStack(alignment: .leading, spacing: 6) {
-                Text(title)
-                    .font(.system(size: 28, weight: .semibold))
-                    .foregroundStyle(EmTheme.label)
+                if windowSectionTitle != title {
+                    Text(title)
+                        .font(.system(size: 28, weight: .semibold))
+                        .foregroundStyle(EmTheme.label)
+                }
                 Text(subtitle)
                     .font(.system(size: 13))
                     .foregroundStyle(EmTheme.secondary)

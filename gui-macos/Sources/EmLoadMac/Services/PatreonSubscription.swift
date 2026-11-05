@@ -16,7 +16,7 @@ final class PatreonSubscription: ObservableObject {
 
     init() {
         jitBenefitEnabled = defaults.object(forKey: "patreonBenefitJITEnabled") as? Bool ?? true
-        emLoadStoreBenefitEnabled = defaults.object(forKey: "patreonBenefitEmLoadStoreEnabled") as? Bool ?? true
+        emLoadStoreBenefitEnabled = defaults.object(forKey: "patreonBenefitEmLoadiOSEnabled") as? Bool ?? true
         let savedAt = defaults.double(forKey: "patreonMembershipCheckedAt")
         let cachedTier = defaults.string(forKey: "patreonMembershipTier")
         if Date().timeIntervalSince1970 - savedAt < 12 * 60 * 60 {
@@ -29,7 +29,7 @@ final class PatreonSubscription: ObservableObject {
     var normalizedTier: String? { tier?.lowercased() }
     var isSubscribed: Bool { normalizedTier == "plus" || normalizedTier == "pro" }
     var hasJITAccess: Bool { isSubscribed && jitBenefitEnabled }
-    var canInstallEmLoadStore: Bool {
+    var canInstallEmLoadiOS: Bool {
         normalizedTier != "pro" && (normalizedTier != "plus" || emLoadStoreBenefitEnabled)
     }
 
@@ -38,9 +38,9 @@ final class PatreonSubscription: ObservableObject {
         defaults.set(enabled, forKey: "patreonBenefitJITEnabled")
     }
 
-    func setEmLoadStoreBenefitEnabled(_ enabled: Bool) {
+    func setEmLoadiOSBenefitEnabled(_ enabled: Bool) {
         emLoadStoreBenefitEnabled = enabled
-        defaults.set(enabled, forKey: "patreonBenefitEmLoadStoreEnabled")
+        defaults.set(enabled, forKey: "patreonBenefitEmLoadiOSEnabled")
     }
 
     func connect() {

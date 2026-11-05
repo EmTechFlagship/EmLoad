@@ -11,7 +11,7 @@ struct EmLoadMacApp: App {
                 .environmentObject(state)
                 .frame(minWidth: 1_040, minHeight: 700)
         }
-        .windowStyle(.hiddenTitleBar)
+        .windowStyle(.titleBar)
         .defaultSize(width: 1_200, height: 820)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -38,7 +38,7 @@ enum AppSection: String, CaseIterable, Identifiable {
     case plusBenefits
     case proBenefits
     case devices
-    case storeSetup
+    case iosSetup
     case store
     case sideload
     case library
@@ -50,10 +50,9 @@ enum AppSection: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
-    /// Sections offered in the sidebar. Misc Tweaks stays implemented, and
-    /// EmLoadStore Setup appears only while an iPhone or iPad is connected.
+    /// Sections offered in the sidebar.
     @MainActor
-    static func visible(deviceConnected: Bool, membership: PatreonSubscription) -> [AppSection] {
+    static func visible(deviceConnected _: Bool, membership: PatreonSubscription) -> [AppSection] {
         allCases.filter { section in
             switch section {
             case .subscription:
@@ -64,8 +63,8 @@ enum AppSection: String, CaseIterable, Identifiable {
                 return membership.normalizedTier == "pro"
             case .misc:
                 return false
-            case .storeSetup:
-                return deviceConnected && membership.canInstallEmLoadStore
+            case .iosSetup:
+                return membership.canInstallEmLoadiOS
             case .jit:
                 return true
             default:
@@ -80,7 +79,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         case .plusBenefits: return "EmLoad Plus"
         case .proBenefits: return "EmLoad Pro"
         case .devices: return "Devices"
-        case .storeSetup: return "EmLoadStore Setup"
+        case .iosSetup: return "EmLoad iOS Setup"
         case .store: return "Store"
         case .sideload: return "Sideload"
         case .library: return "Library"
@@ -102,8 +101,8 @@ enum AppSection: String, CaseIterable, Identifiable {
             return "Manage your EmLoad Pro benefits."
         case .devices:
             return "Phones and iPads visible to EmLoad over USB or Wi-Fi."
-        case .storeSetup:
-            return "Sign in with EmLoadServer, install EmLoadStoreCompanion, and export a pairing record."
+        case .iosSetup:
+            return "Sign in with EmLoadServer, install EmLoad, and export a pairing record."
         case .store:
             return "Download an IPA and send it to Sideload."
         case .sideload:
@@ -127,7 +126,7 @@ enum AppSection: String, CaseIterable, Identifiable {
         switch self {
         case .subscription, .plusBenefits, .proBenefits: return "crown.fill"
         case .devices: return "iphone"
-        case .storeSetup: return "app.badge"
+        case .iosSetup: return "app.badge"
         case .store: return "bag"
         case .sideload: return "square.and.arrow.down"
         case .library: return "square.grid.2x2"
@@ -152,33 +151,19 @@ struct RootView: View {
     var body: some View {
         ZStack(alignment: .top) {
             EmTheme.window
+                .ignoresSafeArea()
 
             if let error = state.startupError {
                 StartupFailureView(message: error)
+                    .background(EmTheme.window)
             } else {
                 shell
             }
 
-            WindowDragArea()
-                .frame(height: 38)
-                .frame(maxWidth: .infinity)
-
-            Text("EmLoad")
-                .font(.system(size: 13, weight: .semibold))
-                .foregroundStyle(EmTheme.label)
-                .padding(.top, 11)
-                .frame(maxWidth: .infinity)
-                .allowsHitTesting(false)
-        }
-        .overlay(alignment: .topLeading) {
-            SidebarToggleButton(visible: $sidebarVisible)
-                .padding(.leading, sidebarVisible ? 184 : 74)
-                .padding(.top, 8)
         }
         .background(WindowConfigurator())
         .preferredColorScheme(.dark)
         .tint(EmTheme.accent)
-        .ignoresSafeArea()
         .frame(minWidth: 1_040, minHeight: 700)
         .environmentObject(membership)
         .task { await state.initialize() }
@@ -201,15 +186,14 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .emloadCheckForUpdates)) { _ in
             Task { await state.checkForAppUpdate(interactive: true) }
         }
-        .onChange(of: state.devices) { devices in
-            if state.isReady, devices.isEmpty, section == .storeSetup {
-                section = .devices
-            }
+        .onChange(of: state.devices) { _ in
+            reconcileSection()
         }
-        .onChange(of: state.isReady) { ready in
-            if ready, state.devices.isEmpty, section == .storeSetup {
-                section = .devices
-            }
+        .onChange(of: state.isReady) { _ in
+            reconcileSection()
+        }
+        .onChange(of: state.isBusy) { _ in
+            reconcileSection()
         }
         .onChange(of: membership.tier) { tier in
             if tier?.lowercased() == "plus" {
@@ -256,12 +240,13 @@ struct RootView: View {
 
             VStack(spacing: 0) {
                 page
-                    .padding(.top, 34)
+                    .padding(.top, 8)
                 Rectangle()
                     .fill(EmTheme.hairline)
                     .frame(height: 1)
                 StatusBar(showLog: $showLog)
             }
+            .background(EmTheme.window)
         }
     }
 
@@ -272,9 +257,9 @@ struct RootView: View {
         case .plusBenefits: MembershipBenefitsView()
         case .proBenefits: MembershipBenefitsView()
         case .devices: DevicesView()
-        case .storeSetup:
-            if membership.canInstallEmLoadStore {
-                EmLoadStoreSetupView()
+        case .iosSetup:
+            if membership.canInstallEmLoadiOS {
+                EmLoadiOSSetupView()
             } else {
                 MembershipBenefitsView()
             }

@@ -19,8 +19,8 @@
                 <StackPanel Spacing="12">
                     <TextBlock Text="Included benefits" FontSize="16" FontWeight="SemiBold" />
                     <TextBlock Text="• JIT tools" TextWrapping="Wrap" />
-                    <TextBlock x:Name="StoreBenefit" Text="• EmLoadStore Companion installs" TextWrapping="Wrap" />
-                    <TextBlock x:Name="ProStoreNotice" Text="EmLoad Pro does not include EmLoadStore Companion installs."
+                    <TextBlock x:Name="StoreBenefit" Text="• EmLoad iOS Companion installs" TextWrapping="Wrap" />
+                    <TextBlock x:Name="ProStoreNotice" Text="EmLoad Pro does not include EmLoad iOS Companion installs."
                                Visibility="Collapsed" TextWrapping="Wrap"
                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                     <HyperlinkButton Content="Manage Patreon membership"

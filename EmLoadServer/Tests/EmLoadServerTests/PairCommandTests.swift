@@ -173,7 +173,7 @@ final class CompanionSideloadTests: XCTestCase {
 
     func testLocatorUsesAnExistingCompanionBeforeBuilding() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let app = root.appendingPathComponent("build/Release-iphoneos/EmLoadStoreCompanion.app", isDirectory: true)
+        let app = root.appendingPathComponent("build/Release-iphoneos/EmLoad.app", isDirectory: true)
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
@@ -191,8 +191,8 @@ final class CompanionSideloadTests: XCTestCase {
 
     func testLocatorBuildsWhenOnlyTheXcodeProjectIsPresent() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let project = root.appendingPathComponent("EmLoadStore.xcodeproj", isDirectory: true)
-        let built = root.appendingPathComponent("EmLoadStoreCompanion.app", isDirectory: true)
+        let project = root.appendingPathComponent("EmLoad.xcodeproj", isDirectory: true)
+        let built = root.appendingPathComponent("EmLoad.app", isDirectory: true)
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         try FileManager.default.createDirectory(at: built, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
@@ -201,7 +201,7 @@ final class CompanionSideloadTests: XCTestCase {
             environment: [:],
             searchRoots: [root],
             buildProject: { projectURL in
-                XCTAssertEqual(projectURL.lastPathComponent, "EmLoadStore.xcodeproj")
+                XCTAssertEqual(projectURL.lastPathComponent, "EmLoad.xcodeproj")
                 return built
             }
         )
@@ -211,37 +211,37 @@ final class CompanionSideloadTests: XCTestCase {
 
     func testBundleIdentifierIsRewrittenBeforeSigning() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let app = root.appendingPathComponent("EmLoadStoreCompanion.app", isDirectory: true)
+        let app = root.appendingPathComponent("EmLoad.app", isDirectory: true)
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let info = app.appendingPathComponent("Info.plist")
         let original = try PropertyListSerialization.data(
-            fromPropertyList: ["CFBundleIdentifier": "com.emiry.EmLoadStoreCompanion"],
+            fromPropertyList: ["CFBundleIdentifier": "com.emiry.EmLoad"],
             format: .xml,
             options: 0
         )
         try original.write(to: info)
 
-        try CompanionLocator.alignBundleIdentifier(of: app, to: "com.example.EmLoadStoreCompanion")
+        try CompanionLocator.alignBundleIdentifier(of: app, to: "com.example.EmLoad")
         let data = try Data(contentsOf: info)
         let plist = try XCTUnwrap(
             PropertyListSerialization.propertyList(from: data, options: [], format: nil) as? [String: Any]
         )
-        XCTAssertEqual(plist["CFBundleIdentifier"] as? String, "com.example.EmLoadStoreCompanion")
+        XCTAssertEqual(plist["CFBundleIdentifier"] as? String, "com.example.EmLoad")
     }
 
     func testCompanionIconReplacesTheCatalogIcon() throws {
         let source = try XCTUnwrap(CompanionIcon.bundledSource())
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        let app = root.appendingPathComponent("EmLoadStoreCompanion.app", isDirectory: true)
+        let app = root.appendingPathComponent("EmLoad.app", isDirectory: true)
         try FileManager.default.createDirectory(at: app, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: root) }
 
         let info = app.appendingPathComponent("Info.plist")
         let original = try PropertyListSerialization.data(
             fromPropertyList: [
-                "CFBundleIdentifier": "com.emiry.EmLoadStoreCompanion",
+                "CFBundleIdentifier": "com.emiry.EmLoad",
                 "CFBundleIcons": [
                     "CFBundlePrimaryIcon": [
                         "CFBundleIconFiles": ["AppIcon60x60"],

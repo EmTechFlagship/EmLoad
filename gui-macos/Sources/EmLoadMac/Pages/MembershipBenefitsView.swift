@@ -42,20 +42,20 @@ struct MembershipBenefitsView: View {
                     if membership.normalizedTier == "plus" {
                         Divider().opacity(0.4)
                         Toggle(
-                            "EmLoadStore Companion",
+                            "EmLoadiOS Companion",
                             isOn: Binding(
                                 get: { membership.emLoadStoreBenefitEnabled },
-                                set: { membership.setEmLoadStoreBenefitEnabled($0) }
+                                set: { membership.setEmLoadiOSBenefitEnabled($0) }
                             )
                         )
                         .font(.callout)
-                        Text("Show the EmLoadStore setup section and allow companion installs to connected devices.")
+                        Text("Show the EmLoadiOS setup section and allow companion installs to connected devices.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     } else {
                         Divider().opacity(0.4)
-                        Label("EmLoadStore Companion installs are unavailable with EmLoad Pro.", systemImage: "minus.circle")
+                        Label("EmLoadiOS Companion installs are unavailable with EmLoad Pro.", systemImage: "minus.circle")
                             .font(.callout)
                             .foregroundStyle(.secondary)
                     }

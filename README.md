@@ -274,12 +274,11 @@ the newline-delimited JSON-RPC bridge (`emload rpc`). It is not a second
 implementation: sideloading, provisioning, signing, refresh and the Misc tweak
 schema all stay in Python.
 
-On **macOS 26 (Tahoe) or newer** the window, sidebar selection, cards and
-primary buttons use **Liquid Glass** (`NSGlassEffectView` / `.glassEffect`),
-with the desktop visible through the window backdrop. macOS 13–15 get the same
-layout with `NSVisualEffectView` and `.ultraThinMaterial` instead, and
-**Reduce Transparency** falls back to a solid window. The app runs on Apple
-silicon and Intel Macs with macOS 13+. The build compiles `zsign` from source
+On **macOS 26 (Tahoe) or newer** the sidebars and Library inspector use
+**Liquid Glass** (`NSGlassEffectView` / `.glassEffect`) around a flat main
+content surface. The app requires macOS 26+ and runs on Apple silicon and Intel
+Macs. **Reduce Transparency** switches the glass surfaces to solid backgrounds.
+The build compiles `zsign` from source
 (upstream does not publish an Intel macOS binary) and bundles it in the app.
 
 ```bash
@@ -302,33 +301,27 @@ The app looks for Python in this order: `EMLOAD_PYTHON`, a venv under
 `requirements.txt` installed; see [gui-macos/README.md](gui-macos/README.md)
 for details and troubleshooting.
 
-### EmLoadServer
+The Store accepts AltStore-compatible source JSON feeds. EmLoad's own source,
+which lists **EmLoad for iOS**, is built in. To add it manually, open **Store**,
+click the App Sources button in the upper-right corner, paste this URL, and
+click **Add Source**:
 
-`EmLoadServer/` is the Swift command-line host used with EmLoadStore. It pairs
-a USB-connected iPhone, signs in to Apple through SideSign, and installs
-EmLoadStoreCompanion. The EmLoad window calls the same library: while an
-iPhone or iPad is connected, the sidebar shows **EmLoadStore Setup**.
-
-The store app itself (the macOS library and the iOS companion) lives in
-`EmLoadStoreLoader/`. Open `EmLoadStoreLoader/EmLoadStore.xcodeproj` and select
-**EmLoadStore** for macOS or **EmLoadStoreCompanion** for iOS.
-
-```bash
-./EmLoadServer/scripts/build.sh
-# -> EmLoadServer/.build/emloadserver
-EmLoadServer/.build/emloadserver anisette-servers
+```text
+https://raw.githubusercontent.com/EmTechFlagship/EmLoad/main/EmLoadiOS/source.json
 ```
 
-The script compiles `x86_64` and `arm64` and joins them with `lipo` when both
-slices succeed. A cross-compile that the toolchain cannot produce is skipped;
-the host architecture is required. `ARCHS="x86_64"` or `ARCHS="arm64"` builds
-one slice. Pairing still needs `idevicepair` on `PATH`. Build it for the Mac you
-are on with:
+To make your own feed, host a JSON file over HTTPS with a top-level `name` and
+an `apps` array. Each app needs a `name`, `bundleIdentifier`, and an HTTPS
+`downloadURL` (or a `versions` array containing `version` and `downloadURL`).
+Optional fields include `developerName`, `subtitle`, `localizedDescription`,
+`iconURL`, `category`, and `size`. Add its HTTPS URL from the same App Sources
+button. Sources can be removed there as well.
 
-```bash
-./EmLoadServer/scripts/install-libimobiledevice.sh
-export PATH="$HOME/.local/bin:$PATH"
-```
+### EmLoad for iOS
+
+`EmLoadiOS/` contains the native iPhone and iPad app. It provides an on-device IPA library; signing and installation remain part of the EmLoad macOS workflow. Open `EmLoadiOS/EmLoad.xcodeproj` and select the **EmLoad** scheme. See [EmLoadiOS/README.md](EmLoadiOS/README.md) for build instructions.
+
+`EmLoadServer/` provides the Mac-side Apple authentication, device pairing, and companion installation used by this workflow. Build it with `./EmLoadServer/scripts/build.sh`; pairing still requires `idevicepair` on `PATH`.
 
 Other people can use an anisette proxy on your Mac without your Apple ID,
 development certificate, or saved anisette identity. The proxy only forwards

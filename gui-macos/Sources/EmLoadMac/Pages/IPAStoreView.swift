@@ -25,6 +25,10 @@ private struct StoreApp: Identifiable {
     let reviewCount: Int?
     let reviews: [StoreReview]
     let category: String
+
+    var isEmLoad: Bool {
+        bundleID.caseInsensitiveCompare("com.emiry.EmLoad") == .orderedSame
+    }
 }
 
 private struct StoreReview: Identifiable {
@@ -33,6 +37,67 @@ private struct StoreReview: Identifiable {
     let title: String
     let body: String
     let rating: Int?
+}
+
+private final class StoreDownloadDelegate: NSObject, URLSessionDownloadDelegate {
+    private var continuation: CheckedContinuation<(URL, URLResponse), Error>?
+    private var session: URLSession?
+    private var progressHandler: (@Sendable (Double) -> Void)?
+    private var downloadedFile: URL?
+    private var copyError: Error?
+
+    func download(
+        from url: URL,
+        progress: @escaping @Sendable (Double) -> Void
+    ) async throws -> (URL, URLResponse) {
+        try await withCheckedThrowingContinuation { continuation in
+            self.continuation = continuation
+            progressHandler = progress
+            let session = URLSession(configuration: .default, delegate: self, delegateQueue: nil)
+            self.session = session
+            session.downloadTask(with: url).resume()
+        }
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didWriteData bytesWritten: Int64,
+        totalBytesWritten: Int64,
+        totalBytesExpectedToWrite: Int64
+    ) {
+        guard totalBytesExpectedToWrite > 0 else { return }
+        progressHandler?(min(1, max(0, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))))
+    }
+
+    func urlSession(
+        _ session: URLSession,
+        downloadTask: URLSessionDownloadTask,
+        didFinishDownloadingTo location: URL
+    ) {
+        let destination = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EmLoad-Store-\(UUID().uuidString).ipa")
+        do {
+            try FileManager.default.copyItem(at: location, to: destination)
+            downloadedFile = destination
+        } catch {
+            copyError = error
+        }
+    }
+
+    func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: Error?) {
+        defer { session.finishTasksAndInvalidate() }
+        if let error {
+            continuation?.resume(throwing: error)
+        } else if let copyError {
+            continuation?.resume(throwing: copyError)
+        } else if let downloadedFile, let response = task.response {
+            continuation?.resume(returning: (downloadedFile, response))
+        } else {
+            continuation?.resume(throwing: StoreCatalogError.downloadFailed)
+        }
+        continuation = nil
+    }
 }
 
 struct IPAStoreView: View {
@@ -44,16 +109,23 @@ struct IPAStoreView: View {
     @State private var query = ""
     @State private var loading = false
     @State private var downloadingID: String?
+    @State private var downloadProgress: Double?
     @State private var status = "Loading trusted app sources…"
     @State private var failed = false
     @State private var customSources = Self.savedSources()
     @State private var showSourceManager = false
+    @State private var showFilterPopover = false
     @State private var selectedApp: StoreApp?
     @State private var selectedCategory = "All"
     @State private var searchExpanded = false
     @FocusState private var searchFocused: Bool
 
     private static let builtInSources = [
+        StoreSource(
+            id: "emload",
+            name: "EmLoad",
+            url: URL(string: "https://raw.githubusercontent.com/EmTechFlagship/EmLoad/main/EmLoadiOS/source.json")!
+        ),
         StoreSource(
             id: "altstore",
             name: "AltStore",
@@ -110,10 +182,10 @@ struct IPAStoreView: View {
 
     var body: some View {
         PageScroll {
-            PageHeader(
-                title: "Store",
-                subtitle: "Browse apps from AltStore, UTM, and SideStore’s moderated community source."
-            ) {
+            HStack(spacing: 10) {
+                Spacer()
+                sourceManagerControl
+                filterControl
                 searchControl
             }
 
@@ -132,11 +204,6 @@ struct IPAStoreView: View {
                 .disabled(loading)
                 .help("Refresh app catalog")
 
-                Button("Sources") { showSourceManager = true }
-                    .buttonStyle(.plain)
-                    .font(.caption.weight(.medium))
-                    .foregroundStyle(EmTheme.secondary)
-                    .help("Manage app sources")
                 Spacer()
                 if !apps.isEmpty {
                     Text("\(filteredApps.count) apps")
@@ -144,28 +211,6 @@ struct IPAStoreView: View {
                         .foregroundStyle(EmTheme.tertiary)
                 }
             }
-
-            ScrollView(.horizontal) {
-                HStack(spacing: 24) {
-                    ForEach(categories, id: \.self) { category in
-                        Button {
-                            selectedCategory = category
-                        } label: {
-                            VStack(spacing: 8) {
-                                Text(category == "All" ? "For you" : category)
-                                    .font(.system(size: 13, weight: selectedCategory == category ? .semibold : .medium))
-                                    .foregroundStyle(selectedCategory == category ? EmTheme.label : EmTheme.secondary)
-                                Capsule()
-                                    .fill(selectedCategory == category ? EmTheme.accent : .clear)
-                                    .frame(height: 3)
-                            }
-                            .fixedSize(horizontal: true, vertical: false)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-            }
-            .scrollIndicators(.hidden)
 
             if !isSearching && !featuredApps.isEmpty {
                 VStack(alignment: .leading, spacing: 12) {
@@ -243,6 +288,107 @@ struct IPAStoreView: View {
             )
             .frame(minWidth: 760, minHeight: 680)
         }
+    }
+
+    @ViewBuilder
+    private var sourceManagerControl: some View {
+        Button {
+            showSourceManager = true
+        } label: {
+            Image(systemName: "square.and.arrow.up")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(EmTheme.label)
+                .frame(width: 38, height: 38)
+                .contentShape(Circle())
+                .background {
+                    if #available(macOS 26.0, *) {
+                        Circle().fill(.clear)
+                            .glassEffect(.regular.interactive(), in: Circle())
+                    } else {
+                        Circle().fill(EmTheme.elevated)
+                            .overlay(Circle().strokeBorder(EmTheme.hairline, lineWidth: 1))
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .help("Manage app sources")
+        .accessibilityLabel("App Sources")
+    }
+
+    private var filterControl: some View {
+        Button {
+            showFilterPopover.toggle()
+        } label: {
+            Image(systemName: "list.bullet")
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(selectedCategory == "All" ? EmTheme.label : EmTheme.accent)
+                .frame(width: 38, height: 38)
+                .contentShape(Circle())
+                .background {
+                    if #available(macOS 26.0, *) {
+                        Circle().fill(.clear)
+                            .glassEffect(.regular.interactive(), in: Circle())
+                    } else {
+                        Circle().fill(EmTheme.elevated)
+                            .overlay(Circle().strokeBorder(EmTheme.hairline, lineWidth: 1))
+                    }
+                }
+        }
+        .buttonStyle(.plain)
+        .popover(isPresented: $showFilterPopover, arrowEdge: .top) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Filter by category")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(EmTheme.secondary)
+                    .padding(.horizontal, 9)
+                    .padding(.top, 6)
+                    .padding(.bottom, 3)
+
+                ForEach(categories, id: \.self) { category in
+                    Button {
+                        selectedCategory = category
+                        showFilterPopover = false
+                    } label: {
+                        HStack(spacing: 9) {
+                            Text(category == "All" ? "For You" : category)
+                                .lineLimit(1)
+                            Spacer(minLength: 0)
+                            if selectedCategory == category {
+                                Image(systemName: "checkmark")
+                                    .font(.system(size: 11, weight: .semibold))
+                                    .foregroundStyle(EmTheme.accent)
+                            }
+                        }
+                        .font(.system(size: 13, weight: selectedCategory == category ? .semibold : .regular))
+                        .foregroundStyle(EmTheme.label)
+                        .padding(.horizontal, 9)
+                        .frame(height: 30)
+                        .contentShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .background {
+                            if selectedCategory == category {
+                                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                                    .fill(EmTheme.accent.opacity(0.14))
+                            }
+                        }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(8)
+            .frame(width: 220)
+            .background {
+                if #available(macOS 26.0, *) {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(.clear)
+                        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                } else {
+                    RoundedRectangle(cornerRadius: 18, style: .continuous)
+                        .fill(EmTheme.elevated)
+                }
+            }
+        }
+        .help("Filter apps by category")
+        .accessibilityLabel("Filter apps")
     }
 
     @ViewBuilder
@@ -355,11 +501,16 @@ struct IPAStoreView: View {
                             .foregroundStyle(.yellow)
                     }
                     Spacer(minLength: 0)
-                    Button("Get") {
-                        Task { await download(app) }
+                    if downloadingID == app.id {
+                        downloadProgressIndicator
+                    } else {
+                        Button("Get") {
+                            Task { await download(app) }
+                        }
+                        .emSecondaryButton()
+                        .disabled(app.downloadURL == nil || downloadingID != nil || app.isEmLoad)
+                        .help(app.isEmLoad ? "EmLoad downloads are temporarily disabled" : "Get this app")
                     }
-                    .emSecondaryButton()
-                    .disabled(app.downloadURL == nil || downloadingID != nil)
                 }
             }
             .frame(width: 245, alignment: .leading)
@@ -419,16 +570,18 @@ struct IPAStoreView: View {
                         .foregroundStyle(EmTheme.tertiary)
                         .lineLimit(1)
                     Spacer()
-                    Button {
-                        Task { await download(app) }
-                    } label: {
-                        Label(
-                            downloadingID == app.id ? "Downloading…" : "Get",
-                            systemImage: downloadingID == app.id ? "arrow.down.circle" : "arrow.down.to.line"
-                        )
+                    if downloadingID == app.id {
+                        downloadProgressIndicator
+                    } else {
+                        Button {
+                            Task { await download(app) }
+                        } label: {
+                            Label("Get", systemImage: "arrow.down.to.line")
+                        }
+                        .emPrimaryButton()
+                        .disabled(app.downloadURL == nil || downloadingID != nil || app.isEmLoad)
+                        .help(app.isEmLoad ? "EmLoad downloads are temporarily disabled" : "Get this app")
                     }
-                    .emPrimaryButton()
-                    .disabled(app.downloadURL == nil || downloadingID != nil)
                 }
             }
         }
@@ -456,6 +609,43 @@ struct IPAStoreView: View {
                 .frame(width: 56, height: 56)
                 .background(EmTheme.elevated, in: RoundedRectangle(cornerRadius: 13))
         }
+    }
+
+    @ViewBuilder
+    private var downloadProgressIndicator: some View {
+        VStack(alignment: .trailing, spacing: 5) {
+            HStack(spacing: 5) {
+                if #available(macOS 26.0, *) {
+                    Image(systemName: "arrow.down.to.line")
+                        .font(.system(size: 13, weight: .semibold))
+                        .symbolEffect(.drawOn.individually, options: .nonRepeating)
+                } else {
+                    Image(systemName: "arrow.down.to.line")
+                        .font(.system(size: 13, weight: .semibold))
+                }
+                if let downloadProgress {
+                    Text("\(Int(downloadProgress * 100))%")
+                        .font(.caption2.monospacedDigit())
+                } else {
+                    Text("Downloading")
+                        .font(.caption2)
+                }
+            }
+            .foregroundStyle(EmTheme.accent)
+
+            if let downloadProgress {
+                ProgressView(value: downloadProgress)
+                    .progressViewStyle(.linear)
+                    .tint(EmTheme.accent)
+                    .frame(width: 112)
+            } else {
+                ProgressView()
+                    .progressViewStyle(.linear)
+                    .tint(EmTheme.accent)
+                    .frame(width: 112)
+            }
+        }
+        .accessibilityLabel("Downloading app")
     }
 
     @MainActor
@@ -532,17 +722,27 @@ struct IPAStoreView: View {
 
     @MainActor
     private func download(_ app: StoreApp) async {
-        guard downloadingID == nil, let url = app.downloadURL,
+        guard !app.isEmLoad, downloadingID == nil, let url = app.downloadURL,
               url.scheme?.lowercased() == "https", let host = url.host?.lowercased(),
               !host.isEmpty else { return }
         downloadingID = app.id
+        downloadProgress = nil
         failed = false
         status = "Downloading \(app.name)…"
-        defer { downloadingID = nil }
+        defer {
+            downloadingID = nil
+            downloadProgress = nil
+        }
 
         var downloadedFile: URL?
         do {
-            let (temporaryURL, response) = try await URLSession.shared.download(from: url)
+            let downloader = StoreDownloadDelegate()
+            let (temporaryURL, response) = try await downloader.download(from: url) { fraction in
+                Task { @MainActor in
+                    guard downloadingID == app.id else { return }
+                    downloadProgress = fraction
+                }
+            }
             defer { try? FileManager.default.removeItem(at: temporaryURL) }
             guard let http = response as? HTTPURLResponse,
                   (200..<300).contains(http.statusCode),
@@ -662,7 +862,7 @@ private struct StoreSourceManagerView: View {
 
     @State private var address = ""
     @State private var isAdding = false
-    @State private var message = "Add an AltStore or SideStore source URL."
+    @State private var message = "Add a compatible AltStore or SideStore source URL."
     @State private var hasError = false
 
     var body: some View {
@@ -672,7 +872,7 @@ private struct StoreSourceManagerView: View {
                     Text("App Sources")
                         .font(.system(size: 22, weight: .semibold))
                         .foregroundStyle(EmTheme.label)
-                    Text("Add compatible AltStore or SideStore source URLs.")
+                    Text("EmLoad, AltStore, and SideStore source feeds are supported.")
                         .font(.callout)
                         .foregroundStyle(EmTheme.secondary)
                 }
@@ -772,25 +972,44 @@ private struct StoreSourceManagerView: View {
 }
 
 private struct AppOverviewView: View {
+    @Environment(\.dismiss) private var dismiss
+
     let app: StoreApp
     let isDownloading: Bool
     let onGet: () -> Void
 
     var body: some View {
         PageScroll {
-            PageHeader(title: app.name, subtitle: app.subtitle.isEmpty ? app.developer : app.subtitle) {
-                Button(action: onGet) {
-                    Label(isDownloading ? "Downloading…" : "Get", systemImage: "arrow.down.to.line")
+            HStack {
+                Spacer()
+                Button {
+                    dismiss()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(EmTheme.label)
+                        .frame(width: 38, height: 38)
+                        .contentShape(Circle())
+                        .background {
+                            if #available(macOS 26.0, *) {
+                                Circle().fill(.clear)
+                                    .glassEffect(.regular.interactive(), in: Circle())
+                            } else {
+                                Circle().fill(EmTheme.elevated)
+                                    .overlay(Circle().strokeBorder(EmTheme.hairline, lineWidth: 1))
+                            }
+                        }
                 }
-                .emPrimaryButton()
-                .disabled(app.downloadURL == nil || isDownloading)
+                .buttonStyle(.plain)
+                .help("Close app details")
+                .accessibilityLabel("Close")
             }
 
             GlassPanel {
                 HStack(alignment: .center, spacing: 16) {
                     overviewIcon
                     VStack(alignment: .leading, spacing: 6) {
-                        Text(app.developer.isEmpty ? app.sourceName : app.developer)
+                        Text(app.name)
                             .font(.system(size: 15, weight: .medium))
                             .foregroundStyle(EmTheme.label)
                         Text(app.bundleID)
@@ -804,7 +1023,7 @@ private struct AppOverviewView: View {
                         }
                     }
                     Spacer(minLength: 0)
-                    VStack(alignment: .trailing, spacing: 4) {
+                    VStack(alignment: .trailing, spacing: 8) {
                         if let rating = app.rating {
                             Text(String(format: "%.1f", rating))
                                 .font(.system(size: 23, weight: .semibold))
@@ -813,14 +1032,13 @@ private struct AppOverviewView: View {
                             Text(app.reviewCount.map { "\($0) ratings" } ?? "Source rating")
                                 .font(.caption2)
                                 .foregroundStyle(EmTheme.secondary)
-                        } else {
-                            Text(app.sourceName)
-                                .font(.caption.weight(.medium))
-                                .foregroundStyle(EmTheme.secondary)
-                            Text("Source")
-                                .font(.caption2)
-                                .foregroundStyle(EmTheme.tertiary)
                         }
+                        Button(action: onGet) {
+                            Label(isDownloading ? "Downloading…" : "Get", systemImage: "arrow.down.to.line")
+                        }
+                        .emPrimaryButton()
+                        .disabled(app.downloadURL == nil || isDownloading || app.isEmLoad)
+                        .help(app.isEmLoad ? "EmLoad downloads are temporarily disabled" : "Get this app")
                     }
                 }
             }

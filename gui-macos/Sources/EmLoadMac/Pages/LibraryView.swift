@@ -1,41 +1,44 @@
 import SwiftUI
 
+enum LibraryLayout {
+    case list
+    case grid
+}
+
 struct LibraryView: View {
+    var inspector = false
+    @Binding var layout: LibraryLayout
     @EnvironmentObject private var state: AppState
 
     @State private var apps: [LibraryApp] = []
     @State private var isLoading = false
     @State private var isRefreshing = false
+    @State private var activeRefreshBundleID: String?
+    @State private var refreshProgress: Double?
     @State private var status = ""
     @State private var pendingAction: PendingAction?
 
-    var body: some View {
-        PageScroll {
-            PageHeader(
-                title: "Your Library",
-                subtitle: "Apps EmLoad has installed, with the time left on each signature."
-            ) {
-                HStack(spacing: 8) {
-                    Button {
-                        Task { await reload() }
-                    } label: {
-                        Image(systemName: "arrow.clockwise")
-                    }
-                    .emSecondaryButton()
-                    .disabled(isLoading || isRefreshing)
-                    .help("Reload the library")
+    init(inspector: Bool = false, layout: Binding<LibraryLayout> = .constant(.list)) {
+        self.inspector = inspector
+        self._layout = layout
+    }
 
-                    Button {
-                        Task { await refresh(bundleIds: apps.map(\.bundleId)) }
-                    } label: {
-                        Label("Refresh all", systemImage: "arrow.triangle.2.circlepath")
-                    }
-                    .emPrimaryButton()
-                    .disabled(apps.isEmpty || isRefreshing)
+    var body: some View {
+        PageScroll(horizontalPadding: inspector ? 12 : 32) {
+            if inspector {
+                Text("Library")
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(EmTheme.label)
+            } else {
+                PageHeader(
+                    title: "Your Library",
+                    subtitle: "Apps EmLoad has installed, with the time left on each signature."
+                ) {
+                    libraryActions(compact: false)
                 }
             }
 
-            if let notice = setupNotice {
+            if !inspector, let notice = setupNotice {
                 NoticeBanner(text: notice)
             }
 
@@ -52,12 +55,20 @@ struct LibraryView: View {
                 EmptyState(
                     symbol: "square.grid.2x2",
                     title: "No tracked apps",
-                    message: "Sideload an app and it will appear here. Refresh re-signs and reinstalls before the profile expires."
+                    message: inspector
+                        ? "Sideload an app and it will appear here."
+                        : "Sideload an app and it will appear here. Refresh re-signs and reinstalls before the profile expires."
                 )
             } else {
-                VStack(spacing: 2) {
-                    ForEach(apps) { app in
-                        row(app)
+                if inspector && layout == .grid {
+                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
+                        ForEach(apps) { inspectorGridCard($0) }
+                    }
+                } else {
+                    VStack(spacing: 2) {
+                        ForEach(apps) { app in
+                            if inspector { inspectorRow(app) } else { row(app) }
+                        }
                     }
                 }
             }
@@ -85,6 +96,114 @@ struct LibraryView: View {
     }
 
     // MARK: - Row
+
+    @ViewBuilder
+    private func libraryActions(compact: Bool) -> some View {
+        HStack(spacing: compact ? 2 : 8) {
+            Button {
+                Task { await reload() }
+            } label: {
+                Image(systemName: "arrow.clockwise")
+            }
+            .emSecondaryButton()
+            .disabled(isLoading || isRefreshing)
+            .help("Reload the library")
+
+            Button {
+                Task { await refresh(bundleIds: apps.map(\.bundleId)) }
+            } label: {
+                if compact {
+                    Image(systemName: "arrow.triangle.2.circlepath")
+                } else {
+                    Label("Refresh all", systemImage: "arrow.triangle.2.circlepath")
+                }
+            }
+            .emPrimaryButton()
+            .disabled(apps.isEmpty || isRefreshing)
+            .help("Refresh all apps")
+        }
+    }
+
+    private func inspectorRow(_ app: LibraryApp) -> some View {
+        HStack(spacing: 9) {
+            AppIconView(dataURI: app.icon, size: 34)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(app.displayName)
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(EmTheme.label)
+                    .lineLimit(1)
+                Text(app.timeLeftText)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(app.expired ? Color.red.opacity(0.9) : EmTheme.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            Menu {
+                Button("Refresh", systemImage: "arrow.triangle.2.circlepath") {
+                    Task { await refresh(bundleIds: [app.bundleId]) }
+                }
+                Button("Uninstall", systemImage: "trash", role: .destructive) {
+                    pendingAction = .uninstall(app)
+                }
+                Button("Stop tracking") { pendingAction = .forget(app) }
+            } label: {
+                Image(systemName: "ellipsis")
+                    .foregroundStyle(EmTheme.secondary)
+                    .frame(width: 24, height: 28)
+                    .contentShape(Rectangle())
+            }
+            .menuStyle(.borderlessButton)
+            .disabled(isRefreshing)
+        }
+        .padding(.vertical, 6)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(EmTheme.hairline).frame(height: 1)
+        }
+    }
+
+    private func inspectorGridCard(_ app: LibraryApp) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .top) {
+                AppIconView(dataURI: app.icon, size: 38)
+                Spacer(minLength: 0)
+                appMenu(app)
+            }
+            Text(app.displayName)
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(EmTheme.label)
+                .lineLimit(1)
+            Text(app.timeLeftText)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(app.expired ? Color.red.opacity(0.9) : EmTheme.secondary)
+                .lineLimit(1)
+        }
+        .padding(9)
+        .frame(maxWidth: .infinity, minHeight: 94, alignment: .topLeading)
+        .background(EmTheme.elevated, in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 11, style: .continuous)
+                .strokeBorder(EmTheme.hairline, lineWidth: 1)
+        }
+    }
+
+    private func appMenu(_ app: LibraryApp) -> some View {
+        Menu {
+            Button("Refresh", systemImage: "arrow.triangle.2.circlepath") {
+                Task { await refresh(bundleIds: [app.bundleId]) }
+            }
+            Button("Uninstall", systemImage: "trash", role: .destructive) {
+                pendingAction = .uninstall(app)
+            }
+            Button("Stop tracking") { pendingAction = .forget(app) }
+        } label: {
+            Image(systemName: "ellipsis")
+                .foregroundStyle(EmTheme.secondary)
+                .frame(width: 22, height: 24)
+                .contentShape(Rectangle())
+        }
+        .menuStyle(.borderlessButton)
+        .disabled(isRefreshing)
+    }
 
     private var setupNotice: String? {
         guard state.isReady else { return nil }
@@ -121,10 +240,33 @@ struct LibraryView: View {
                 Text(app.displayName)
                     .font(.system(size: 14, weight: .semibold))
                     .foregroundStyle(EmTheme.label)
-                Text(installedLine(app))
-                    .font(.system(size: 12))
-                    .foregroundStyle(EmTheme.secondary)
-                    .lineLimit(1)
+                if activeRefreshBundleID == app.bundleId {
+                    HStack(spacing: 6) {
+                        if let refreshProgress {
+                            ProgressView(value: refreshProgress)
+                                .progressViewStyle(.linear)
+                        } else {
+                            ProgressView()
+                                .progressViewStyle(.linear)
+                        }
+                        if let refreshProgress {
+                            Text("\(Int(refreshProgress * 100))%")
+                                .font(.system(size: 10, weight: .medium).monospacedDigit())
+                                .foregroundStyle(EmTheme.secondary)
+                        }
+                    }
+                    .frame(maxWidth: 210)
+                    .tint(EmTheme.accent)
+                    Text(status)
+                        .font(.system(size: 10))
+                        .foregroundStyle(EmTheme.secondary)
+                        .lineLimit(1)
+                } else {
+                    Text(installedLine(app))
+                        .font(.system(size: 12))
+                        .foregroundStyle(EmTheme.secondary)
+                        .lineLimit(1)
+                }
             }
 
             Spacer(minLength: 8)
@@ -196,10 +338,14 @@ struct LibraryView: View {
     private func refresh(bundleIds: [String]) async {
         guard !bundleIds.isEmpty, !isRefreshing else { return }
         isRefreshing = true
+        activeRefreshBundleID = nil
+        refreshProgress = nil
         status = "Refreshing \(bundleIds.count) app(s)…"
         state.setBusy(true, status)
         defer {
             isRefreshing = false
+            activeRefreshBundleID = nil
+            refreshProgress = nil
             state.setBusy(false)
         }
 
@@ -211,39 +357,55 @@ struct LibraryView: View {
             params["signedDir"] = state.settings.signedDir
         }
 
-        do {
-            let raw = try await state.call(
-                "library.refresh",
-                params,
-                onProgress: { update in
-                    if let step = update.step, !step.isEmpty {
-                        status = "[\(update.phase)] \(step)"
+        var totalFailed = 0
+        var totalRefreshed = 0
+        var failures: [String] = []
+        for (index, bundleId) in bundleIds.enumerated() {
+            activeRefreshBundleID = bundleId
+            refreshProgress = nil
+            let appName = apps.first(where: { $0.bundleId == bundleId })?.displayName ?? bundleId
+            status = "Refreshing \(appName) (\(index + 1) of \(bundleIds.count))…"
+            var appParams = params
+            appParams["bundleIds"] = [bundleId]
+
+            do {
+                let raw = try await state.call(
+                    "library.refresh",
+                    appParams,
+                    onProgress: { update in
+                        if let percent = update.percent {
+                            refreshProgress = min(1, max(0, percent / 100))
+                        }
+                        if let step = update.step, !step.isEmpty {
+                            status = "[\(update.phase)] \(step)"
+                        }
                     }
-                }
-            )
-            let result = JSON.dict(raw) ?? [:]
-            let failed = JSON.int(result["failed"]) ?? 0
-            let rows = result["results"] as? [[String: Any]] ?? []
-            var failures: [String] = []
-            for row in rows {
+                )
+                let result = JSON.dict(raw) ?? [:]
+                let rows = result["results"] as? [[String: Any]] ?? []
+                let failed = JSON.int(result["failed"]) ?? 0
+                totalFailed += failed
+                totalRefreshed += rows.count - failed
+                for row in rows {
                 let bundle = JSON.string(row["bundle_id"]) ?? "app"
                 if JSON.string(row["status"]) == "error" {
                     failures.append("\(bundle): \(JSON.string(row["error"]) ?? "failed")")
                 } else if JSON.string(row["status"]) == "not_tracked" {
                     failures.append("\(bundle): not tracked")
                 }
+                }
+            } catch {
+                totalFailed += 1
+                failures.append("\(bundleId): \(error.localizedDescription)")
             }
-            status = failed == 0
-                ? "Refreshed \(rows.count - failed) app(s)."
-                : "Refreshed \(rows.count - failed) app(s); \(failed) failed."
-            state.statusMessage = status
+        }
 
-            if !failures.isEmpty {
-                state.alertMessage = failures.joined(separator: "\n")
-            }
-        } catch {
-            status = "Refresh failed: \(error.localizedDescription)"
-            state.report(error)
+        status = totalFailed == 0
+            ? "Refreshed \(totalRefreshed) app(s)."
+            : "Refreshed \(totalRefreshed) app(s); \(totalFailed) failed."
+        state.statusMessage = status
+        if !failures.isEmpty {
+            state.alertMessage = failures.joined(separator: "\n")
         }
 
         await reload()

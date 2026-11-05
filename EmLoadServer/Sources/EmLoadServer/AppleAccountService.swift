@@ -62,6 +62,14 @@ struct AppleAccountService {
         try keychain.delete(account: anisetteAccount)
     }
 
+    static func saveIPAImportPairingKey(_ key: Data, for udid: String) throws {
+        try keychain.save(key, account: "ipa-import-host-\(udid.lowercased())")
+    }
+
+    static func ipaImportPairingKey(for udid: String) throws -> Data? {
+        try keychain.load(Data.self, account: "ipa-import-host-\(udid.lowercased())")
+    }
+
     static func savedSigningIdentity() throws -> KeyStore? {
         guard let material = try keychain.load(SigningMaterial.self, account: signingAccount) else {
             return nil

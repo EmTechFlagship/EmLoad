@@ -513,6 +513,56 @@ class Handlers:
 
         return developer.list_teams()
 
+    def certificate_list(self, params: dict[str, Any]) -> list[dict[str, Any]]:
+        from . import developer
+
+        team_id = str(params.get("teamId") or "")
+        if not team_id:
+            raise ValueError("select a developer team first")
+        if not any(
+            str(team.get("teamId") or team.get("team_id") or "") == team_id
+            for team in developer.list_teams()
+        ):
+            raise ValueError("the selected team is not available to the signed-in account")
+
+        certificates = []
+        for cert in developer.list_certificates(team_id):
+            serial = cert.get("serialNumber") or cert.get("serialNum") or cert.get("serialNumberHex")
+            if serial is None:
+                continue
+            certificates.append(
+                {
+                    "team_id": team_id,
+                    "serial_number": str(serial),
+                    "name": cert.get("name") or cert.get("machineName") or cert.get("certificateName") or "Apple Development",
+                    "status": cert.get("status") or cert.get("statusString") or "Active",
+                    "expires_at": cert.get("expirationDate") or cert.get("expirationDateString") or cert.get("expiresAt"),
+                }
+            )
+        return certificates
+
+    def certificate_revoke(self, params: dict[str, Any]) -> dict[str, Any]:
+        from . import developer
+
+        team_id = str(params.get("teamId") or "")
+        serial = str(params.get("serialNumber") or "")
+        if not team_id or not serial:
+            raise ValueError("team and certificate serial number are required")
+        if not any(
+            str(team.get("teamId") or team.get("team_id") or "") == team_id
+            for team in developer.list_teams()
+        ):
+            raise ValueError("the selected team is not available to the signed-in account")
+        if not any(
+            str(cert.get("serialNumber") or cert.get("serialNum") or cert.get("serialNumberHex") or "").casefold()
+            == serial.casefold()
+            for cert in developer.list_certificates(team_id)
+        ):
+            raise ValueError("that certificate is no longer active on the selected team")
+
+        developer.revoke_certificate(team_id, serial)
+        return {"team_id": team_id, "serial_number": serial, "revoked": True}
+
     # -- provisioning ------------------------------------------------------ #
     def provision_ensure(self, params: dict[str, Any]) -> dict[str, Any]:
         return provision.ensure_provisioned_for_device(params["udid"])
@@ -625,6 +675,8 @@ _METHODS = {
     "account.login2fa": "account_login_2fa",
     "account.logout": "account_logout",
     "account.teams": "account_teams",
+    "certificate.list": "certificate_list",
+    "certificate.revoke": "certificate_revoke",
     "provision.ensure": "provision_ensure",
     "provision.reset": "provision_reset",
     "settings.get": "settings_get",

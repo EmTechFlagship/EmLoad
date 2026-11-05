@@ -23,7 +23,7 @@ python -m emload rpc
 ## Requirements
 
 - Apple silicon or Intel Mac
-- macOS 14 Sonoma or newer
+- macOS 26 Tahoe or newer
 - Xcode 16 or newer
 - Python 3.10+ with the engine installed:
   ```bash
@@ -57,7 +57,7 @@ the same prerelease as the Windows installers. A single-architecture build is
 named `macos-arm64` or `macos-x86_64` instead. Open the DMG and drag
 `EmLoad.app` onto the Applications shortcut to install. The ZIP contains the
 app bundle directly. The app is ad-hoc signed, not notarized. Use only on
-macOS 14 or newer, and follow the setup instructions above for the Python
+macOS 26 or newer, and follow the setup instructions above for the Python
 engine requirements.
 
 Each time the packaged app opens, it asks GitHub for a newer release and
@@ -96,24 +96,17 @@ installation issue, not an EmLoad one.
 
 ## Liquid Glass
 
-The app targets macOS 14 (Sonoma). On macOS 26 (Tahoe), it uses native Liquid
-Glass APIs; macOS 14–25 use the available material and styling fallbacks:
+The app requires macOS 26 (Tahoe) or newer and uses native Liquid Glass APIs.
+The main content stays flat, with glass reserved for the navigation sidebar
+and the Library inspector:
 
-| Surface | macOS 26+ | macOS 14–25 |
+| Surface | macOS 26+ |
 | --- | --- | --- |
-| Window backdrop | `NSGlassEffectView` over `NSVisualEffectView` | `NSVisualEffectView` (`.underWindowBackground`) |
-| Sidebar | Native `.sidebar` vibrancy, with Liquid Glass selection | Sidebar vibrancy with a tinted selection |
-| Cards | `.glassEffect(.regular)` | Material with a hairline stroke |
-| Primary buttons | `.buttonStyle(.glassProminent)` | `.borderedProminent` |
-| Secondary buttons | `.buttonStyle(.glass)` | `.bordered` |
+| Main content | Flat charcoal surface |
+| Sidebar and Library inspector | `NSGlassEffectView` with Liquid Glass selection |
 
-The window is transparent (`isOpaque = false`, clear background) with a
-hidden title bar and full-size content view, so the glass reaches behind the
-traffic lights and the desktop shows through. If **Reduce Transparency** is
-enabled, the app uses a solid window background instead.
-
-macOS 26 APIs remain availability-checked, so the app can be built with the
-macOS 14 deployment target and gains Liquid Glass when running on macOS 26.
+The title bar is hidden and transparent, with a full-size content view. If
+**Reduce Transparency** is enabled, both sidebars use a solid background.
 
 ## Python discovery
 

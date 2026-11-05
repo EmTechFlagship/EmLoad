@@ -1,0 +1,57 @@
+name: EmLoad iOS Xcode IPA Build
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    paths:
+      - "EmLoadiOS/**"
+      - ".github/workflows/build-ios-ipa.yml"
+  pull_request:
+    paths:
+      - "EmLoadiOS/**"
+      - ".github/workflows/build-ios-ipa.yml"
+
+jobs:
+  ipa:
+    name: Build EmLoad IPA
+    runs-on: macos-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Initialize EmLoad iOS Xcode dependencies
+        run: git -C EmLoadiOS submodule update --init --recursive
+
+      - name: Build unsigned iOS app
+        run: |
+          xcodebuild \
+            -project EmLoadiOS/AltStore.xcodeproj \
+            -scheme SideStore \
+            -configuration Release \
+            -sdk iphoneos \
+            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGN_IDENTITY="" \
+            SYMROOT="${{ github.workspace }}/EmLoadiOS/build" \
+            build
+
+      - name: Package IPA
+        run: |
+          set -euo pipefail
+          app="${{ github.workspace }}/EmLoadiOS/build/Release-iphoneos/SideStore.app"
+          test -d "$app"
+          stage="$(mktemp -d)"
+          mkdir -p "$stage/Payload"
+          cp -R "$app" "$stage/Payload/"
+          mkdir -p "${{ github.workspace }}/EmLoadiOS/artifacts"
+          ditto -c -k --keepParent "$stage/Payload" "${{ github.workspace }}/EmLoadiOS/artifacts/EmLoad.ipa"
+
+      - name: Upload IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: EmLoad-ipa
+          path: EmLoadiOS/artifacts/EmLoad.ipa
+          if-no-files-found: error

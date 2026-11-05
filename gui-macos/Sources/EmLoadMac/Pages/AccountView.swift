@@ -6,6 +6,10 @@ struct AccountView: View {
     @State private var status: AccountStatus?
     @State private var teams: [[String: Any]] = []
     @State private var teamsError: String?
+    @State private var certificates: [DeveloperCertificate] = []
+    @State private var certificatesError: String?
+    @State private var certificateToRevoke: DeveloperCertificate?
+    @State private var showRevokeConfirmation = false
     @State private var busy = false
     @State private var showSignOut = false
 
@@ -44,6 +48,7 @@ struct AccountView: View {
 
             if status?.authenticated == true {
                 teamsCard
+                certificatesCard
             }
         }
         .task(id: state.isReady) {
@@ -59,6 +64,16 @@ struct AccountView: View {
             }
         } message: {
             Text("This clears the saved Apple session. Apps already installed stay on the device.")
+        }
+        .alert("Revoke certificate?", isPresented: $showRevokeConfirmation) {
+            Button("Cancel", role: .cancel) { certificateToRevoke = nil }
+            Button("Revoke Certificate", role: .destructive) {
+                if let certificateToRevoke {
+                    Task { await revoke(certificateToRevoke) }
+                }
+            }
+        } message: {
+            Text("Apple will revoke \(certificateToRevoke?.name ?? "this certificate"). Apps signed with it may stop launching. This action cannot be undone.")
         }
     }
 
@@ -149,6 +164,63 @@ struct AccountView: View {
         }
     }
 
+    private var certificatesCard: some View {
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    SectionLabel("Apple Development certificates")
+                    Spacer()
+                    if busy { ProgressView().controlSize(.small) }
+                }
+
+                Text("Certificates belong to the selected Apple developer team. Revoking one can invalidate apps signed with it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                if let certificatesError {
+                    Text(certificatesError)
+                        .font(.callout)
+                        .foregroundStyle(.red)
+                } else if certificates.isEmpty {
+                    Text(busy ? "Loading certificates…" : "No active development certificates found.")
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
+                } else {
+                    ForEach(certificates) { certificate in
+                        HStack(alignment: .top, spacing: 12) {
+                            Image(systemName: "checkmark.seal")
+                                .foregroundStyle(.secondary)
+                                .padding(.top, 2)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(certificate.name)
+                                    .font(.callout.weight(.medium))
+                                Text("\(certificate.teamName) · \(certificate.teamID)")
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                                Text("Serial \(certificate.serialNumber)\(certificate.expiresAt.map { " · Expires \($0)" } ?? "")")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(.secondary)
+                                    .textSelection(.enabled)
+                            }
+                            Spacer(minLength: 8)
+                            Button("Revoke", role: .destructive) {
+                                certificateToRevoke = certificate
+                                showRevokeConfirmation = true
+                            }
+                            .emSecondaryButton()
+                            .disabled(busy)
+                        }
+                        .padding(.vertical, 5)
+                        if certificate.id != certificates.last?.id {
+                            Divider()
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     // MARK: - Actions
 
     private func refresh() async {
@@ -161,7 +233,9 @@ struct AccountView: View {
 
         guard status?.authenticated == true else {
             teams = []
+            certificates = []
             teamsError = nil
+            certificatesError = nil
             return
         }
 
@@ -171,7 +245,60 @@ struct AccountView: View {
             teamsError = nil
         } catch {
             teams = []
+            certificates = []
             teamsError = error.localizedDescription
+            certificatesError = nil
+            return
+        }
+
+        do {
+            certificates = try await loadCertificates(for: teams)
+            certificatesError = nil
+        } catch {
+            certificates = []
+            certificatesError = error.localizedDescription
+        }
+    }
+
+    private func loadCertificates(for teams: [[String: Any]]) async throws -> [DeveloperCertificate] {
+        var result: [DeveloperCertificate] = []
+        for team in teams {
+            let id = teamId(team)
+            guard !id.isEmpty else { continue }
+            let raw = try await state.call("certificate.list", ["teamId": id])
+            let values = raw as? [[String: Any]] ?? []
+            result.append(contentsOf: values.compactMap { value in
+                guard let serial = JSON.string(value["serial_number"]) else { return nil }
+                return DeveloperCertificate(
+                    teamID: id,
+                    teamName: teamName(team),
+                    serialNumber: serial,
+                    name: JSON.string(value["name"]) ?? "Apple Development",
+                    expiresAt: JSON.string(value["expires_at"])
+                )
+            })
+        }
+        return result
+    }
+
+    private func revoke(_ certificate: DeveloperCertificate) async {
+        guard !busy else { return }
+        busy = true
+        defer {
+            busy = false
+            certificateToRevoke = nil
+        }
+        do {
+            _ = try await state.call("certificate.revoke", [
+                "teamId": certificate.teamID,
+                "serialNumber": certificate.serialNumber
+            ])
+            certificates.removeAll { $0.id == certificate.id }
+            state.appendLog("Revoked Apple development certificate \(certificate.serialNumber).")
+            state.statusMessage = "Certificate revoked"
+        } catch {
+            certificatesError = error.localizedDescription
+            state.report(error)
         }
     }
 
@@ -203,4 +330,14 @@ struct AccountView: View {
     private func teamType(_ team: [String: Any]) -> String? {
         JSON.string(team["type"]) ?? JSON.string(team["team_type"])
     }
+}
+
+private struct DeveloperCertificate: Identifiable, Equatable {
+    let teamID: String
+    let teamName: String
+    let serialNumber: String
+    let name: String
+    let expiresAt: String?
+
+    var id: String { "\(teamID):\(serialNumber)" }
 }

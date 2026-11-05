@@ -1,3 +1,0 @@
-discord.py>=2.4,<3
-jishaku>=2.6,<3
-python-dotenv>=1.0

@@ -43,7 +43,25 @@ struct ShellOutput: Equatable {
 
 struct ShellCommand {
     var executableURL = URL(fileURLWithPath: "/usr/bin/env")
-    var environment = ProcessInfo.processInfo.environment
+    var environment = Self.defaultEnvironment()
+
+    private static func defaultEnvironment() -> [String: String] {
+        var environment = ProcessInfo.processInfo.environment
+        let home = environment["HOME"] ?? FileManager.default.homeDirectoryForCurrentUser.path
+        let existingPaths = (environment["PATH"] ?? "").split(separator: ":").map(String.init)
+        let preferredPaths = [
+            "\(home)/.local/bin",
+            "\(home)/.local/opt/libimobiledevice/bin",
+            "/opt/homebrew/bin",
+            "/usr/local/bin"
+        ]
+        let additions = preferredPaths.filter { path in
+            !existingPaths.contains(path)
+                && FileManager.default.fileExists(atPath: path)
+        }
+        environment["PATH"] = (additions + existingPaths).joined(separator: ":")
+        return environment
+    }
 
     func run(_ arguments: [String]) throws -> ShellOutput {
         let process = Process()
@@ -103,7 +121,7 @@ struct USBDeviceScanner {
 }
 
 struct CompanionLocator {
-    static let bundleIdentifier = "com.emiry.EmLoadStoreCompanion"
+    static let bundleIdentifier = "com.emiry.EmLoad"
     static let environmentKey = "EMLOADSERVER_COMPANION"
 
     var environment: [String: String]
@@ -141,7 +159,7 @@ struct CompanionLocator {
         }
 
         for root in searchRoots {
-            let project = root.appendingPathComponent("EmLoadStore.xcodeproj")
+            let project = root.appendingPathComponent("AltStore.xcodeproj")
             var isDirectory: ObjCBool = false
             if fileManager.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue {
                 return try buildProject(project)
@@ -151,13 +169,60 @@ struct CompanionLocator {
         throw SideloadError.companionNotFound(nil)
     }
 
+    /// Build from the checked-out EmLoad iOS Xcode project for this install.
+    /// Existing .app and .ipa outputs are deliberately ignored so each install
+    /// click gets a fresh build in its own private workspace.
+    func buildFresh(in workspace: URL) throws -> URL {
+        try fileManager.createDirectory(
+            at: workspace,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try fileManager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workspace.path)
+        for root in searchRoots {
+            let project = root.appendingPathComponent("AltStore.xcodeproj", isDirectory: true)
+            var isDirectory: ObjCBool = false
+            if fileManager.fileExists(atPath: project.path, isDirectory: &isDirectory), isDirectory.boolValue {
+                let buildSource = workspace.appendingPathComponent("EmLoadiOS", isDirectory: true)
+                try fileManager.createDirectory(at: buildSource, withIntermediateDirectories: true)
+                for item in [
+                    "AltStore.xcodeproj", "AltStore", "AltWidget", "Shared", "SideBackup",
+                    "SideStore", "Dependencies", "xcconfigs", "Build.xcconfig", "Makefile",
+                    "SideStore.conf"
+                ] {
+                    let source = root.appendingPathComponent(item)
+                    guard fileManager.fileExists(atPath: source.path) else {
+                        throw SideloadError.companionNotFound(source.path)
+                    }
+                    try fileManager.copyItem(
+                        at: source,
+                        to: buildSource.appendingPathComponent(item)
+                    )
+                }
+                for package in ["SideSign", "minimuxer"] {
+                    let gitPointer = buildSource
+                        .appendingPathComponent("Dependencies", isDirectory: true)
+                        .appendingPathComponent(package, isDirectory: true)
+                        .appendingPathComponent(".git")
+                    if fileManager.fileExists(atPath: gitPointer.path) {
+                        try fileManager.removeItem(at: gitPointer)
+                    }
+                }
+                let buildProject = buildSource.appendingPathComponent("AltStore.xcodeproj", isDirectory: true)
+                return try Self.buildWithXcode(projectURL: buildProject, productsDirectory: workspace)
+            }
+        }
+        throw SideloadError.companionNotFound(nil)
+    }
+
     static func candidates(in root: URL) -> [URL] {
         [
-            root.appendingPathComponent("build/Release-iphoneos/EmLoadStoreCompanion.app"),
-            root.appendingPathComponent("build/Debug-iphoneos/EmLoadStoreCompanion.app"),
-            root.appendingPathComponent("artifacts/EmLoadStoreCompanion.ipa"),
-            root.appendingPathComponent("EmLoadStoreCompanion.ipa"),
-            root.appendingPathComponent("EmLoadStoreCompanion.app")
+            root.appendingPathComponent("build/Release-iphoneos/SideStore.app"),
+            root.appendingPathComponent("build/Debug-iphoneos/SideStore.app"),
+            root.appendingPathComponent("artifacts/EmLoad.ipa"),
+            root.appendingPathComponent("EmLoad.ipa"),
+            root.appendingPathComponent("SideStore.app"),
+            root.appendingPathComponent("EmLoad.app")
         ]
     }
 
@@ -179,6 +244,9 @@ struct CompanionLocator {
             .resolvingSymlinksInPath()
             .deletingLastPathComponent()
         var seeds = ancestors(of: current) + ancestors(of: executable)
+        if let bundledProject = Bundle.main.resourceURL?.appendingPathComponent("EmLoadiOS", isDirectory: true) {
+            seeds.append(bundledProject)
+        }
         if let root = ProcessInfo.processInfo.environment["EMLOAD_ROOT"]?
             .trimmingCharacters(in: .whitespacesAndNewlines),
            !root.isEmpty {
@@ -191,7 +259,7 @@ struct CompanionLocator {
         var seen = Set<String>()
         var roots: [URL] = []
         for seed in seeds {
-            for candidate in [seed, seed.appendingPathComponent("EmLoadStoreLoader", isDirectory: true)] {
+            for candidate in [seed, seed.appendingPathComponent("EmLoadiOS", isDirectory: true)] {
                 let path = candidate.standardizedFileURL.path
                 if seen.insert(path).inserted {
                     roots.append(candidate.standardizedFileURL)
@@ -203,22 +271,39 @@ struct CompanionLocator {
 
     static func buildWithXcode(projectURL: URL) throws -> URL {
         let products = projectURL.deletingLastPathComponent().appendingPathComponent("build", isDirectory: true)
+        return try buildWithXcode(projectURL: projectURL, productsDirectory: products)
+    }
+
+    static func buildWithXcode(projectURL: URL, productsDirectory products: URL) throws -> URL {
+        let derivedData = products.appendingPathComponent("DerivedData", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: products,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.createDirectory(
+            at: derivedData,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
         let result = try ShellCommand().run([
             "xcodebuild",
             "-project", projectURL.path,
-            "-target", "EmLoadStoreCompanion",
+            "-scheme", "SideStore",
             "-configuration", "Release",
             "-sdk", "iphoneos",
+            "-derivedDataPath", derivedData.path,
             "CODE_SIGNING_ALLOWED=NO",
             "CODE_SIGNING_REQUIRED=NO",
             "CODE_SIGN_IDENTITY=",
             "SYMROOT=\(products.path)",
+            "clean",
             "build"
         ])
         guard result.status == 0 else {
             throw SideloadError.buildFailed(Self.tail(result.output))
         }
-        let app = products.appendingPathComponent("Release-iphoneos/EmLoadStoreCompanion.app")
+        let app = products.appendingPathComponent("Release-iphoneos/SideStore.app")
         guard FileManager.default.fileExists(atPath: app.path) else {
             throw SideloadError.companionNotFound(app.path)
         }
@@ -243,7 +328,11 @@ struct CompanionLocator {
     }
 
     private static func tail(_ output: String) -> String {
-        let lines = output.split(separator: "\n", omittingEmptySubsequences: false).suffix(12)
+        let allLines = output.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
+        let errors = allLines.filter { $0.localizedCaseInsensitiveContains("error:") }.suffix(8)
+        let tail = allLines.suffix(12)
+        var seen = Set<String>()
+        let lines = (Array(errors) + Array(tail)).filter { seen.insert($0).inserted }
         let text = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? "xcodebuild failed." : text
     }
@@ -254,21 +343,46 @@ struct CompanionSideload {
     var locator = CompanionLocator()
     var portal = DeveloperPortal()
 
-    func install(session: AuthSession, devices: [ConnectedDevice]) async throws {
+    func install(
+        session: AuthSession,
+        devices: [ConnectedDevice],
+        progress: ((Double?, String) -> Void)? = nil
+    ) async throws {
         guard !devices.isEmpty else { return }
-        let companion = try locator.locate()
+        let workspace = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EmLoad-Install-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workspace,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workspace.path)
+        defer { try? FileManager.default.removeItem(at: workspace) }
+
+        progress?(0.04, "Checking Apple developer account…")
         let teams = try await portal.fetchTeams(for: session.account, session: session.session)
         guard let team = USBDeviceList.preferredTeam(in: teams) else {
             throw SideloadError.noTeam
         }
 
+        progress?(0.12, "Preparing signing identity…")
         let keyStore = try await signingIdentity(for: team, session: session.session)
-        for device in devices {
+        for (index, device) in devices.enumerated() {
             try pair(device)
             try await register(device, team: team, session: session.session)
+            let completed = Double(index + 1) / Double(devices.count)
+            progress?(0.22 + completed * 0.12, "Pairing \(device.name)…")
         }
 
-        let appID = try await ensureAppID(team: team, session: session.session)
+        progress?(0.38, "Preparing app identifier…")
+        let appID = try await ensureAppID(
+            bundleIdentifier: CompanionLocator.bundleIdentifier,
+            suggestedName: "EmLoadiOS Companion",
+            existing: try await portal.fetchAppIDs(for: team, session: session.session),
+            team: team,
+            session: session.session
+        )
+        progress?(0.48, "Preparing device provisioning profile…")
         let profile = try await portal.downloadProvisioningProfile(
             for: appID,
             deviceType: .iPhone,
@@ -277,11 +391,122 @@ struct CompanionSideload {
         )
         try ensureProfileIncludes(devices, profile: profile)
 
-        let ipa = try await signedIPA(from: companion, profile: profile, team: team, keyStore: keyStore)
-        defer { try? FileManager.default.removeItem(at: ipa.deletingLastPathComponent()) }
-        for device in devices {
+        // Do all Apple Developer Portal work before the potentially long first
+        // Xcode dependency build, so an expiring Apple session does not leave an
+        // otherwise successful install waiting on a stale portal session.
+        let xcodeProducts = workspace.appendingPathComponent("XcodeProducts", isDirectory: true)
+        progress?(nil, "Building EmLoad with Xcode…")
+        let companion = try locator.buildFresh(in: xcodeProducts)
+        progress?(0.78, "Xcode build complete. Preparing signed IPA…")
+
+        let signedDirectory = workspace.appendingPathComponent("SignedIPA", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: signedDirectory,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        progress?(nil, "Signing the IPA…")
+        let ipa = try await signedIPA(
+            from: companion,
+            profile: profile,
+            team: team,
+            keyStore: keyStore,
+            workDirectory: signedDirectory
+        )
+        progress?(0.90, "Signed IPA ready. Installing…")
+        for (index, device) in devices.enumerated() {
+            progress?(nil, "Installing on \(device.name)…")
             try install(ipa, on: device)
+            let completed = Double(index + 1) / Double(devices.count)
+            progress?(0.90 + completed * 0.10, "Installed on \(device.name)")
         }
+    }
+
+    func identityTransfer(session: AuthSession) async throws -> EmLoadIdentityTransfer {
+        let teams = try await portal.fetchTeams(for: session.account, session: session.session)
+        guard let team = USBDeviceList.preferredTeam(in: teams) else {
+            throw SideloadError.noTeam
+        }
+        let keyStore = try await signingIdentity(for: team, session: session.session)
+        let password = UUID().uuidString + UUID().uuidString
+        let p12 = try keyStore.exportP12(password: password)
+        return EmLoadIdentityTransfer(
+            authSession: session,
+            team: team,
+            certificate: p12,
+            certificatePassword: password
+        )
+    }
+
+    func installIPA(
+        at ipaURL: URL,
+        on device: ConnectedDevice,
+        session: AuthSession,
+        progress: ((String) -> Void)? = nil
+    ) async throws {
+        let workspace = FileManager.default.temporaryDirectory
+            .appendingPathComponent("EmLoad-IPA-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: workspace,
+            withIntermediateDirectories: true,
+            attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: workspace.path)
+        defer { try? FileManager.default.removeItem(at: workspace) }
+
+        progress?("Checking Apple developer account…")
+        let teams = try await portal.fetchTeams(for: session.account, session: session.session)
+        guard let team = USBDeviceList.preferredTeam(in: teams) else {
+            throw SideloadError.noTeam
+        }
+        let keyStore = try await signingIdentity(for: team, session: session.session)
+
+        progress?("Preparing device registration…")
+        try pair(device)
+        try await register(device, team: team, session: session.session)
+
+        progress?("Reading IPA…")
+        let appURL = try FileManager.default.unzipAppBundle(at: ipaURL, to: workspace)
+        guard let appBundle = AppBundle(fileURL: appURL) else {
+            throw SideloadError.invalidIPA("The archive does not contain a valid iOS application.")
+        }
+
+        var bundleIDs = [appBundle.bundleIdentifier]
+        bundleIDs.append(contentsOf: appBundle.appExtensions.map(\.bundleIdentifier))
+        var seenBundleIDs = Set<String>()
+        bundleIDs = bundleIDs.filter { seenBundleIDs.insert($0).inserted }
+        guard !bundleIDs.isEmpty, bundleIDs.allSatisfy({ !$0.isEmpty && !$0.contains("*") }) else {
+            throw SideloadError.invalidIPA("The IPA contains an invalid bundle identifier.")
+        }
+
+        progress?("Preparing app identifiers and profiles…")
+        let existingIDs = try await portal.fetchAppIDs(for: team, session: session.session)
+        var profiles: [ProvisioningProfile] = []
+        for bundleID in bundleIDs {
+            let appID = try await ensureAppID(
+                bundleIdentifier: bundleID,
+                suggestedName: bundleID,
+                existing: existingIDs,
+                team: team,
+                session: session.session
+            )
+            let profile = try await portal.downloadProvisioningProfile(
+                for: appID,
+                deviceType: device.type,
+                team: team,
+                session: session.session
+            )
+            try ensureProfileIncludes([device], profile: profile)
+            profiles.append(profile)
+        }
+
+        progress?("Signing IPA…")
+        let signer = AppBundleSigner(team: team, keyStore: keyStore)
+        try await signer.signApp(at: appURL, provisioningProfiles: profiles)
+        let signedIPA = try FileManager.default.zipAppBundle(at: appURL)
+
+        progress?("Installing on \(device.name)…")
+        try install(signedIPA, on: device)
     }
 
     private func signingIdentity(for team: Team, session: Session) async throws -> KeyStore {
@@ -322,15 +547,19 @@ struct CompanionSideload {
         }
     }
 
-    private func ensureAppID(team: Team, session: Session) async throws -> AppID {
-        let bundleIdentifier = CompanionLocator.bundleIdentifier
-        let existing = try await portal.fetchAppIDs(for: team, session: session)
+    private func ensureAppID(
+        bundleIdentifier: String,
+        suggestedName: String,
+        existing: [AppID],
+        team: Team,
+        session: Session
+    ) async throws -> AppID {
         if let match = existing.first(where: { $0.bundleIdentifier.caseInsensitiveCompare(bundleIdentifier) == .orderedSame }) {
             return match
         }
         do {
             return try await portal.addAppID(
-                withName: "EmLoadStore Companion",
+                withName: String(suggestedName.prefix(50)),
                 bundleIdentifier: bundleIdentifier,
                 team: team,
                 session: session
@@ -356,15 +585,14 @@ struct CompanionSideload {
         from companion: URL,
         profile: ProvisioningProfile,
         team: Team,
-        keyStore: KeyStore
+        keyStore: KeyStore,
+        workDirectory work: URL
     ) async throws -> URL {
-        let work = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
-        try FileManager.default.createDirectory(at: work, withIntermediateDirectories: true)
         let appURL: URL
         if companion.pathExtension.lowercased() == "ipa" {
             appURL = try FileManager.default.unzipAppBundle(at: companion, to: work)
         } else {
-            let destination = work.appendingPathComponent("EmLoadStoreCompanion.app", isDirectory: true)
+            let destination = work.appendingPathComponent("EmLoad.app", isDirectory: true)
             try FileManager.default.copyItem(at: companion, to: destination)
             appURL = destination
         }
@@ -427,7 +655,7 @@ struct CompanionSideload {
 }
 
 enum CompanionIcon {
-    static let resourceName = "EmLoadStore"
+    static let resourceName = "EmLoadiOS"
 
     struct Slot {
         let filename: String
@@ -500,6 +728,7 @@ enum SideloadError: LocalizedError {
     case companionNotFound(String?)
     case buildFailed(String)
     case invalidCompanion(String)
+    case invalidIPA(String)
     case noTeam
     case appIDUnavailable(String)
     case deviceNotInProfile(String)
@@ -524,14 +753,16 @@ enum SideloadError: LocalizedError {
         case .deviceListFailed(let details):
             return "Could not list USB devices. \(details)"
         case .companionNotFound(let path):
-            return path.map { "EmLoadStoreCompanion was not found at \($0)." }
-                ?? "EmLoadStoreCompanion was not found. Build it with Xcode or set EMLOADSERVER_COMPANION to an .app or .ipa."
+            return path.map { "EmLoad was not found at \($0)." }
+                ?? "The EmLoad iOS Xcode project was not found. Reinstall EmLoad Desktop or set EMLOAD_ROOT to an EmLoad source checkout."
         case .buildFailed(let details):
-            return "Could not build EmLoadStoreCompanion. \(details)"
+            return "Could not build EmLoad. \(details)"
         case .invalidCompanion(let details):
             return details
+        case .invalidIPA(let details):
+            return details
         case .noTeam:
-            return "This Apple ID is not a member of a development team, so EmLoadStoreCompanion could not be signed."
+            return "This Apple ID is not a member of a development team, so EmLoad could not be signed."
         case .appIDUnavailable(let bundleIdentifier):
             return "Apple would not register the App ID \(bundleIdentifier)."
         case .deviceNotInProfile(let name):
@@ -539,9 +770,9 @@ enum SideloadError: LocalizedError {
         case .pairFailed(let details):
             return "Could not pair the connected device. Unlock it, approve the Trust prompt, and sign in again. \(details)"
         case .installFailed(let name, let details):
-            return "Could not install EmLoadStoreCompanion on \(name). \(details)"
+            return "Could not install EmLoad on \(name). \(details)"
         case .iconFailed(let details):
-            return "Could not apply the EmLoadStoreCompanion icon. \(details)"
+            return "Could not apply the EmLoad icon. \(details)"
         case .couldNotStart(let tool, let reason):
             return "Could not start \(tool): \(reason)"
         }

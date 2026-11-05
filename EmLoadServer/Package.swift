@@ -19,7 +19,7 @@ let package = Package(
             name: "EmLoadServerKit",
             dependencies: [.product(name: "SideSign", package: "SideSign")],
             path: "Sources/EmLoadServer",
-            resources: [.copy("Resources/EmLoadStore.png")]
+            resources: [.copy("Resources/EmLoadiOS.png")]
         ),
         .executableTarget(
             name: "emloadserver",

@@ -24,10 +24,10 @@ public static class PatreonMembershipState
         set => Update(preferences => preferences.JitBenefitEnabled = value);
     }
 
-    public static bool EmLoadStoreBenefitEnabled
+    public static bool EmLoadIOSBenefitEnabled
     {
-        get { lock (Gate) return _preferences.EmLoadStoreBenefitEnabled; }
-        set => Update(preferences => preferences.EmLoadStoreBenefitEnabled = value);
+        get { lock (Gate) return _preferences.EmLoadIOSBenefitEnabled; }
+        set => Update(preferences => preferences.EmLoadIOSBenefitEnabled = value);
     }
 
     public static void SetTier(string? tier)
@@ -67,6 +67,6 @@ public static class PatreonMembershipState
     {
         public string? Tier { get; set; }
         public bool JitBenefitEnabled { get; set; } = true;
-        public bool EmLoadStoreBenefitEnabled { get; set; } = true;
+        public bool EmLoadIOSBenefitEnabled { get; set; } = true;
     }
 }

@@ -17,7 +17,7 @@ The authenticated session and Mac-ADI identity are stored in the macOS Keychain.
 
 Commands:
   pair             Pair and validate an iPhone, then export its private pairing record.
-  login            Authenticate with Apple, then install EmLoadStoreCompanion on a USB-connected device.
+  login            Authenticate with Apple, then install EmLoad on a USB-connected device.
   anisette-servers List supported HTTPS Mac-ADI servers from SideStore's registry.
   proxy            Forward anisette v3 for other people, using their own identifier.
   account          Show the Apple ID associated with the saved host session.
@@ -51,7 +51,7 @@ public struct EmLoadServerCLI {
                 try pairCommand.run()
                 print("Device paired and validated.")
                 print("Private pairing record saved to \(pairCommand.outputURL.path)")
-                print("Treat this file like a credential; transfer it only to your own EmLoadStore device.")
+                print("Treat this file like a credential; transfer it only to your own EmLoadiOS device.")
             case "login":
                 if arguments.dropFirst().contains("--help") {
                     print("""
@@ -61,7 +61,7 @@ public struct EmLoadServerCLI {
                     omitted, SideStore (New) is selected when available. Pass an http or https
                     URL to use an anisette proxy instead of a registry server. The endpoint is
                     not changed automatically after a failed request. When an iPhone or iPad is
-                    connected by USB, EmLoadStoreCompanion is signed with this Apple ID and
+                    connected by USB, EmLoad is signed with this Apple ID and
                     installed on that device.
                     """)
                     return
@@ -196,15 +196,15 @@ public struct EmLoadServerCLI {
         }
 
         guard !devices.isEmpty else {
-            print("No iPhone or iPad is connected by USB, so EmLoadStoreCompanion was not installed.")
+            print("No iPhone or iPad is connected by USB, so EmLoad was not installed.")
             return
         }
 
         let names = devices.map { "\($0.name) (\($0.udid))" }.joined(separator: ", ")
-        print("Installing EmLoadStoreCompanion on \(names).")
+        print("Installing EmLoad on \(names).")
         try await CompanionSideload().install(session: session, devices: devices)
         for device in devices {
-            print("Installed EmLoadStoreCompanion on \(device.name).")
+            print("Installed EmLoad on \(device.name).")
         }
     }
 

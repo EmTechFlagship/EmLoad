@@ -28,7 +28,7 @@ struct SubscriptionView: View {
                         tier: "Em Basic membership",
                         benefits: [
                             ("JIT tools", "Enable just-in-time compilation for compatible sideloaded apps."),
-                            ("EmLoadStore Companion", "Set up the companion on connected iPhone and iPad devices."),
+                            ("EmLoadiOS Companion", "Set up the companion on connected iPhone and iPad devices."),
                         ]
                     )
                     subscribeButton
@@ -40,7 +40,7 @@ struct SubscriptionView: View {
                         tier: "Em Pro membership",
                         benefits: [
                             ("Plus benefits", "Includes EmLoad Plus JIT tools."),
-                            ("EmLoadStore Companion", "Includes sideloading the companion to your iPhone or iPad."),
+                            ("EmLoadiOS Companion", "Includes sideloading the companion to your iPhone or iPad."),
                         ]
                     )
                     subscribeButton

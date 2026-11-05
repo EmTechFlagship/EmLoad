@@ -20,7 +20,7 @@ CACHE="$PKG/.build/zsign-deps"
 OPENSSL_VERSION="${OPENSSL_VERSION:-3.5.4}"
 DEST=""
 HOST="$(uname -m)"
-MIN_OS="14.0"
+MIN_OS="26.0"
 JOBS="$(sysctl -n hw.ncpu 2>/dev/null || printf '4')"
 
 usage() {

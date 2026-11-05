@@ -27,9 +27,15 @@
     <key>LSApplicationCategoryType</key>
     <string>public.app-category.utilities</string>
     <key>LSMinimumSystemVersion</key>
-    <string>14.0</string>
+    <string>26.0</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>NSLocalNetworkUsageDescription</key>
+    <string>EmLoad connects with paired EmLoad iOS devices to sign and install IPA files over USB.</string>
+    <key>NSBonjourServices</key>
+    <array>
+        <string>_emload._tcp</string>
+    </array>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
     <key>NSSupportsAutomaticGraphicsSwitching</key>

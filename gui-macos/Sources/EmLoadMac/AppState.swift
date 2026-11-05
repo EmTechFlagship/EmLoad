@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import EmLoadServerKit
 
 /// Process-wide state: the engine client, the latest device inventory, the
 /// persisted settings snapshot, and the shared activity log.
@@ -61,6 +62,12 @@ final class AppState: ObservableObject {
             }
             await refreshDevices()
             await refreshAccount()
+            do {
+                try IPAImportServer.shared.start()
+                appendLog("EmLoadServer is ready to receive paired iOS IPA imports.")
+            } catch {
+                appendLog("Could not start the paired iOS IPA import service: \(error.localizedDescription)")
+            }
 
             isReady = true
             startupError = nil
@@ -113,6 +120,7 @@ final class AppState: ObservableObject {
     }
 
     func shutdown() {
+        IPAImportServer.shared.stop()
         engine?.stop()
         engine = nil
         isReady = false

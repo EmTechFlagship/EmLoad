@@ -3,31 +3,34 @@ import EmLoadServerKit
 import SwiftUI
 import UniformTypeIdentifiers
 
-struct EmLoadStoreSetupView: View {
+struct EmLoadiOSSetupView: View {
     @EnvironmentObject private var state: AppState
     @EnvironmentObject private var membership: PatreonSubscription
 
     @StateObject private var signIn = StoreSignInCoordinator()
-    @State private var account: EmLoadStoreSetup.Account?
+    @State private var account: EmLoadiOSSetup.Account?
     @State private var showSignIn = false
     @State private var selectedUDID: String?
+    @State private var retryInstallDevices: [EmLoadiOSSetup.Device]?
     @State private var busy = false
     @State private var status = ""
+    @State private var installProgress: Double? = 0
+    @State private var installPhase = ""
     @State private var activity: [String] = []
 
     var body: some View {
         PageScroll {
-            if !membership.canInstallEmLoadStore {
+            if !membership.canInstallEmLoadiOS {
                 PageHeader(
-                    title: "EmLoadStore unavailable",
+                    title: "EmLoadiOS unavailable",
                     subtitle: membership.normalizedTier == "pro"
                         ? "EmLoad Pro includes EmLoad Plus benefits, but companion installs are not available on this plan."
-                        : "EmLoadStore is turned off in your EmLoad Plus benefit settings."
+                        : "EmLoadiOS is turned off in your EmLoad Plus benefit settings."
                 )
             } else {
                 PageHeader(
-                    title: "EmLoadStore Setup",
-                    subtitle: "Sign in on this Mac, install EmLoadStoreCompanion, and save a pairing record for the connected device."
+                    title: "EmLoad iOS Setup",
+                    subtitle: "Sign in on this Mac, install EmLoad, and pair your iPhone or iPad for EmLoad iOS."
                 ) {
                     if account == nil {
                         Button {
@@ -64,17 +67,21 @@ struct EmLoadStoreSetupView: View {
                 }
             }
         }
-        .task { if membership.canInstallEmLoadStore { refreshAccount() } }
+        .task { if membership.canInstallEmLoadiOS { refreshAccount() } }
         .onChange(of: usbDevices.map(\.udid)) { udids in
             if let selectedUDID, udids.contains(selectedUDID) { return }
             selectedUDID = udids.first
         }
         .sheet(isPresented: $showSignIn, onDismiss: signIn.cancel) {
             StoreSignInSheet(coordinator: signIn) { appleID in
-                account = EmLoadStoreSetup.Account(appleID: appleID)
+                account = EmLoadiOSSetup.Account(appleID: appleID)
                 state.appendLog("EmLoadServer signed in as \(appleID).")
                 state.statusMessage = "Signed in as \(appleID)"
                 note("Signed in as \(appleID).")
+                if let retryInstallDevices {
+                    self.retryInstallDevices = nil
+                    Task { await installCompanion(on: retryInstallDevices) }
+                }
             }
         }
     }
@@ -98,7 +105,7 @@ struct EmLoadStoreSetupView: View {
                     Text("No Apple ID session is saved for EmLoadServer.")
                         .font(.system(size: 14, weight: .semibold))
                         .foregroundStyle(EmTheme.label)
-                    Text("Sign in here to create the certificate that signs EmLoadStoreCompanion. This is separate from the account EmLoad uses for other sideloads.")
+                    Text("Sign in here to create the certificate that signs EmLoad. This is separate from the account EmLoad uses for other sideloads.")
                         .font(.system(size: 13))
                         .foregroundStyle(EmTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -116,10 +123,10 @@ struct EmLoadStoreSetupView: View {
     private var deviceCard: some View {
         GlassPanel {
             VStack(alignment: .leading, spacing: 14) {
-                SectionLabel("Connected by USB")
+                SectionLabel("Pair EmLoad iOS")
 
                 if usbDevices.isEmpty {
-                    Text("A phone or iPad is visible, but companion install and pairing need a USB connection. Unlock it and tap Trust.")
+                    Text("Connect your iPhone or iPad by USB, unlock it, and tap Trust. EmLoad will pair the device and export its private pairing file for import in EmLoad iOS.")
                         .font(.system(size: 13))
                         .foregroundStyle(EmTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -136,7 +143,7 @@ struct EmLoadStoreSetupView: View {
                         Button {
                             Task { await installCompanion() }
                         } label: {
-                            Label("Install Companion", systemImage: "arrow.down.app")
+                            Label("Install EmLoad (iOS)", systemImage: "arrow.down.app")
                         }
                         .emPrimaryButton()
                         .disabled(busy || account == nil || usbDevices.isEmpty)
@@ -144,20 +151,45 @@ struct EmLoadStoreSetupView: View {
                         Button {
                             exportPairing()
                         } label: {
-                            Label("Export Pairing Record", systemImage: "square.and.arrow.up")
+                            Label("Pair EmLoad iOS", systemImage: "point.3.connected.trianglepath.dotted")
                         }
                         .emSecondaryButton()
                         .disabled(busy || selectedUDID == nil)
 
-                        if busy {
-                            ProgressView().controlSize(.small)
-                        }
                     }
 
-                    Text("Install signs EmLoadStoreCompanion with the saved Apple ID and copies it to every USB device. The pairing file is a credential: keep it for your own device.")
+                    Text("Pairing validates the USB connection and saves a private pairing file. Choose a location available in the Files app on your iPhone, then import that file from EmLoad iOS Setup. Export and import a fresh file after updating EmLoad so the Mac authorizes IPA imports. Keep it private.")
                         .font(.system(size: 12))
                         .foregroundStyle(EmTheme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+
+                    Text("After importing this pairing file, EmLoad iOS can securely send IPA files to EmLoadServer on this Mac. The Mac signs and installs them over USB; EmLoad iOS also imports the encrypted EmLoad certificate and Apple sign-in session so it can use the same account.")
+                        .font(.system(size: 12))
+                        .foregroundStyle(EmTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                if busy {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack {
+                            Text(installPhase)
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundStyle(EmTheme.secondary)
+                                .lineLimit(1)
+                                .truncationMode(.tail)
+                            Spacer(minLength: 8)
+                            if let installProgress {
+                                Text("\(Int(installProgress * 100))%")
+                                    .font(.system(size: 11, design: .monospaced))
+                                    .foregroundStyle(EmTheme.secondary)
+                            }
+                        }
+                        ProgressView(value: installProgress)
+                            .progressViewStyle(.linear)
+                            .accessibilityLabel(installPhase)
+                    }
+                    .frame(maxWidth: 420)
+                    .padding(.top, 2)
                 }
             }
         }
@@ -172,7 +204,7 @@ struct EmLoadStoreSetupView: View {
 
     private func refreshAccount() {
         do {
-            account = try EmLoadStoreSetup.savedAccount()
+            account = try EmLoadiOSSetup.savedAccount()
         } catch {
             account = nil
             note(error.localizedDescription)
@@ -181,7 +213,7 @@ struct EmLoadStoreSetupView: View {
 
     private func signOut() {
         do {
-            try EmLoadStoreSetup.signOut()
+            try EmLoadiOSSetup.signOut()
             account = nil
             note("Apple ID session removed from this Mac.")
             state.appendLog("EmLoadServer signed out.")
@@ -191,31 +223,59 @@ struct EmLoadStoreSetupView: View {
     }
 
     private func installCompanion() async {
-        guard membership.canInstallEmLoadStore else { return }
+        guard membership.canInstallEmLoadiOS else { return }
         let targets = usbDevices.map {
-            EmLoadStoreSetup.Device(
+            EmLoadiOSSetup.Device(
                 udid: $0.udid,
                 name: $0.displayName,
                 productType: $0.model ?? "iPhone"
             )
         }
+        await installCompanion(on: targets)
+    }
+
+    private func installCompanion(on targets: [EmLoadiOSSetup.Device]) async {
+        guard membership.canInstallEmLoadiOS else { return }
         guard !targets.isEmpty, !busy else { return }
         busy = true
+        installProgress = 0
         let names = targets.map(\.name).joined(separator: ", ")
-        note("Installing EmLoadStoreCompanion on \(names)…")
-        state.setBusy(true, "Installing EmLoadStoreCompanion…")
+        installPhase = "Preparing Apple signing and device pairing…"
+        note("Preparing Apple signing and device pairing, then building a fresh private IPA with Xcode for \(names)…")
+        state.setBusy(true, "Preparing and installing EmLoad (iOS)…")
         defer {
             busy = false
             state.setBusy(false)
         }
         do {
-            try await EmLoadStoreSetup.installCompanion(on: targets)
-            note("Installed EmLoadStoreCompanion on \(names).")
-            state.appendLog("Installed EmLoadStoreCompanion on \(names).")
-            state.statusMessage = "EmLoadStoreCompanion installed"
+            try await EmLoadiOSSetup.installCompanion(on: targets) { fraction, phase in
+                Task { @MainActor in
+                    installProgress = fraction
+                    installPhase = phase
+                }
+            }
+            installProgress = 1
+            installPhase = "Installed successfully"
+            note("Built a fresh signed IPA privately and installed EmLoad on \(names). The temporary IPA was removed.")
+            state.appendLog("Installed EmLoad on \(names).")
+            state.statusMessage = "EmLoad installed"
         } catch {
-            note("Install failed: \(error.localizedDescription)")
-            state.report(error)
+            if error.localizedDescription.localizedCaseInsensitiveContains("session expired") {
+                try? EmLoadiOSSetup.signOut()
+                account = nil
+                state.statusMessage = "Apple sign-in expired. Sign in again to install EmLoad iOS."
+                if !usbDevices.isEmpty {
+                    retryInstallDevices = targets
+                    note("Apple sign-in expired. Sign in again and EmLoad will retry the install.")
+                    showSignIn = true
+                } else {
+                    note("Apple sign-in expired. Reconnect the iPhone, sign in again, then install EmLoad (iOS).")
+                }
+                state.appendLog("EmLoad iOS install needs a renewed Apple sign-in.")
+            } else {
+                note("Install failed: \(error.localizedDescription)")
+                state.report(error)
+            }
         }
     }
 
@@ -226,17 +286,17 @@ struct EmLoadStoreSetupView: View {
         panel.nameFieldStringValue = "\(udid).plist"
         panel.canCreateDirectories = true
         panel.isExtensionHidden = false
-        panel.prompt = "Export"
-        panel.message = "Save a new pairing record. Existing files are not overwritten."
+        panel.prompt = "Pair & Save"
+        panel.message = "EmLoad will pair this iPhone or iPad and export a private pairing file. Choose an iCloud Drive location to make it available in Files on that device. Existing files are not overwritten."
         guard panel.runModal() == .OK, let url = panel.url else { return }
 
         busy = true
         defer { busy = false }
         do {
-            try EmLoadStoreSetup.exportPairing(udid: udid, to: url)
-            note("Pairing record saved to \(url.path).")
-            state.appendLog("Exported pairing record for \(udid).")
-            state.statusMessage = "Pairing record saved"
+            try EmLoadiOSSetup.exportPairing(udid: udid, to: url)
+            note("Paired the device and saved its pairing file to \(url.path). Import it in EmLoad iOS Setup.")
+            state.appendLog("Paired device and exported pairing record for \(udid).")
+            state.statusMessage = "EmLoad iOS paired"
         } catch {
             note("Pairing export failed: \(error.localizedDescription)")
             state.report(error)
@@ -251,17 +311,17 @@ struct EmLoadStoreSetupView: View {
 
 @MainActor
 private final class StoreSignInCoordinator: ObservableObject {
-    @Published var challenge: EmLoadStoreSetup.Challenge?
-    private var continuation: CheckedContinuation<EmLoadStoreSetup.Answer, Never>?
+    @Published var challenge: EmLoadiOSSetup.Challenge?
+    private var continuation: CheckedContinuation<EmLoadiOSSetup.Answer, Never>?
 
-    func respond(to challenge: EmLoadStoreSetup.Challenge) async -> EmLoadStoreSetup.Answer {
+    func respond(to challenge: EmLoadiOSSetup.Challenge) async -> EmLoadiOSSetup.Answer {
         await withCheckedContinuation { continuation in
             self.challenge = challenge
             self.continuation = continuation
         }
     }
 
-    func submit(_ answer: EmLoadStoreSetup.Answer) {
+    func submit(_ answer: EmLoadiOSSetup.Answer) {
         guard continuation != nil else { return }
         challenge = nil
         continuation?.resume(returning: answer)
@@ -419,7 +479,7 @@ private struct StoreSignInSheet: View {
         message = ""
         Task {
             do {
-                let account = try await EmLoadStoreSetup.signIn(
+                let account = try await EmLoadiOSSetup.signIn(
                     appleID: appleID,
                     password: secret,
                     respond: { challenge in

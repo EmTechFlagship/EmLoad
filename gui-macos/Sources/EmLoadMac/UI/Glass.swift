@@ -15,56 +15,9 @@ enum EmTheme {
     static let tertiary = Color.white.opacity(0.38)
 }
 
-/// True when the process is running on macOS 26 (Tahoe) or newer, where the
-/// Liquid Glass design language and its SwiftUI/AppKit APIs are available.
 enum LiquidGlass {
-    static var isAvailable: Bool {
-        if #available(macOS 26.0, *) { return true }
-        return false
-    }
-
     static var reducesTransparency: Bool {
         NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency
-    }
-}
-
-// MARK: - Window backdrop
-
-/// The window's own backdrop. On macOS 26 this is a real `NSGlassEffectView`
-/// (Liquid Glass); older releases get the closest equivalent, a behind-window
-/// vibrancy material. Reduce Transparency swaps in a solid window colour.
-struct LiquidGlassBackdrop: View {
-    var body: some View {
-        if LiquidGlass.reducesTransparency {
-            Color(nsColor: .windowBackgroundColor)
-        } else if #available(macOS 26.0, *) {
-            // Vibrancy keeps the window legible if the glass has nothing to
-            // sample (for example, over a flat desktop); the glass view on top
-            // supplies the Liquid Glass refraction.
-            ZStack {
-                VisualEffectBackdrop(material: .underWindowBackground, blending: .behindWindow)
-                GlassBackdropView()
-            }
-            .ignoresSafeArea()
-        } else {
-            VisualEffectBackdrop(material: .underWindowBackground, blending: .behindWindow)
-                .ignoresSafeArea()
-        }
-    }
-}
-
-@available(macOS 26.0, *)
-private struct GlassBackdropView: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSGlassEffectView {
-        let view = NSGlassEffectView()
-        view.style = .regular
-        view.cornerRadius = 0
-        return view
-    }
-
-    func updateNSView(_ nsView: NSGlassEffectView, context: Context) {
-        nsView.style = .regular
-        nsView.cornerRadius = 0
     }
 }
 
@@ -89,8 +42,7 @@ struct VisualEffectBackdrop: NSViewRepresentable {
 
 // MARK: - Window configuration
 
-/// Applies the transparent title bar / full-size content view needed for the
-/// glass backdrop to reach every edge, including behind the traffic lights.
+/// Restores the standard opaque title bar over EmLoad's flat window surface.
 struct WindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
@@ -106,14 +58,12 @@ struct WindowConfigurator: NSViewRepresentable {
         guard let window else { return }
 
         window.title = "EmLoad"
-        window.titleVisibility = .hidden
-        window.titlebarAppearsTransparent = true
-        window.titlebarSeparatorStyle = .none
-        window.styleMask.insert(.fullSizeContentView)
-        window.toolbarStyle = .unified
+        window.titleVisibility = .visible
+        window.titlebarAppearsTransparent = false
+        window.titlebarSeparatorStyle = .automatic
+        window.toolbar = nil
         window.isMovableByWindowBackground = false
         window.hasShadow = true
-        window.appearance = NSAppearance(named: .darkAqua)
         window.isOpaque = true
         window.backgroundColor = EmTheme.windowNS
 

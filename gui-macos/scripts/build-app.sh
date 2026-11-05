@@ -24,6 +24,20 @@ CONTENTS="$APP/Contents"
 MACOS_DIR="$CONTENTS/MacOS"
 RESOURCES="$CONTENTS/Resources"
 ENGINE="$RESOURCES/engine"
+IOS_SOURCE="$REPO/EmLoadiOS"
+
+for item in AltStore.xcodeproj AltStore AltWidget Shared SideBackup SideStore Dependencies xcconfigs Makefile Build.xcconfig SideStore.conf; do
+    if [[ ! -e "$IOS_SOURCE/$item" ]]; then
+        echo "error: EmLoadiOS/$item is required to package the iOS setup builder." >&2
+        exit 1
+    fi
+done
+for package in SideSign minimuxer; do
+    if [[ ! -f "$IOS_SOURCE/Dependencies/$package/Package.swift" ]]; then
+        echo "error: EmLoadiOS/Dependencies/$package is missing. Run 'git -C EmLoadiOS submodule update --init --recursive'." >&2
+        exit 1
+    fi
+done
 
 HOST="$(uname -m)"
 if [[ -z "${ARCHS:-}" ]]; then
@@ -67,6 +81,17 @@ mkdir -p "$MACOS_DIR" "$RESOURCES" "$ENGINE"
 
 cp "$BIN" "$MACOS_DIR/EmLoadMac"
 cp "$PKG/Resources/Info.plist" "$CONTENTS/Info.plist"
+
+# Ship the EmLoad iOS Xcode project so the macOS setup page can make a fresh,
+# local Xcode build for each install, including from the packaged app.
+IOS_PROJECT="$RESOURCES/EmLoadiOS"
+mkdir -p "$IOS_PROJECT"
+for item in AltStore.xcodeproj AltStore AltWidget Shared SideBackup SideStore Dependencies xcconfigs Makefile Build.xcconfig SideStore.conf; do
+    ditto "$IOS_SOURCE/$item" "$IOS_PROJECT/$item"
+done
+for package in SideSign minimuxer; do
+    rm -f "$IOS_PROJECT/Dependencies/$package/.git"
+done
 
 # Release builds stamp the full tag (0.1.0-beta2) so the in-app updater can
 # tell this copy from a later GitHub pre-release. Local builds leave it unset
