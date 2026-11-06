@@ -11,7 +11,7 @@ struct EmLoadMacApp: App {
                 .environmentObject(state)
                 .frame(minWidth: 1_040, minHeight: 700)
         }
-        .windowStyle(.titleBar)
+        .windowStyle(.hiddenTitleBar)
         .defaultSize(width: 1_200, height: 820)
         .commands {
             CommandGroup(replacing: .newItem) {}
@@ -31,6 +31,8 @@ struct EmLoadMacApp: App {
 extension Notification.Name {
     static let emloadShowDiagnostics = Notification.Name("EmLoadShowDiagnostics")
     static let emloadCheckForUpdates = Notification.Name("EmLoadCheckForUpdates")
+    static let emloadLibraryRefreshAll = Notification.Name("EmLoadLibraryRefreshAll")
+    static let emloadLibraryReload = Notification.Name("EmLoadLibraryReload")
 }
 
 enum AppSection: String, CaseIterable, Identifiable {
@@ -61,10 +63,8 @@ enum AppSection: String, CaseIterable, Identifiable {
                 return membership.normalizedTier == "plus"
             case .proBenefits:
                 return membership.normalizedTier == "pro"
-            case .misc:
+            case .misc, .library, .iosSetup, .store:
                 return false
-            case .iosSetup:
-                return membership.canInstallEmLoadiOS
             case .jit:
                 return true
             default:
@@ -142,11 +142,13 @@ enum AppSection: String, CaseIterable, Identifiable {
 struct RootView: View {
     @EnvironmentObject private var state: AppState
     @StateObject private var membership = PatreonSubscription()
+    @StateObject private var libraryToolbar = LibraryToolbarModel()
     @State private var section: AppSection = AppSection(
         rawValue: ProcessInfo.processInfo.environment["EMLOAD_SECTION"] ?? ""
     ) ?? .devices
     @State private var showLog = false
-    @State private var sidebarVisible = true
+    @State private var showLibraryInspector = true
+    @State private var libraryLayout: LibraryLayout = .list
 
     var body: some View {
         ZStack(alignment: .top) {
@@ -166,6 +168,7 @@ struct RootView: View {
         .tint(EmTheme.accent)
         .frame(minWidth: 1_040, minHeight: 700)
         .environmentObject(membership)
+        .environmentObject(libraryToolbar)
         .task { await state.initialize() }
         .task { await state.checkForAppUpdate() }
         .sheet(item: $state.availableUpdate) { update in
@@ -186,16 +189,16 @@ struct RootView: View {
         .onReceive(NotificationCenter.default.publisher(for: .emloadCheckForUpdates)) { _ in
             Task { await state.checkForAppUpdate(interactive: true) }
         }
-        .onChange(of: state.devices) { _ in
+        .onChange(of: state.devices) { _, _ in
             reconcileSection()
         }
-        .onChange(of: state.isReady) { _ in
+        .onChange(of: state.isReady) { _, _ in
             reconcileSection()
         }
-        .onChange(of: state.isBusy) { _ in
+        .onChange(of: state.isBusy) { _, _ in
             reconcileSection()
         }
-        .onChange(of: membership.tier) { tier in
+        .onChange(of: membership.tier) { _, tier in
             if tier?.lowercased() == "plus" {
                 section = .plusBenefits
             } else if tier?.lowercased() == "pro" {
@@ -206,8 +209,8 @@ struct RootView: View {
                 reconcileSection()
             }
         }
-        .onChange(of: membership.jitBenefitEnabled) { _ in reconcileSection() }
-        .onChange(of: membership.emLoadStoreBenefitEnabled) { _ in reconcileSection() }
+        .onChange(of: membership.jitBenefitEnabled) { _, _ in reconcileSection() }
+        .onChange(of: membership.emLoadStoreBenefitEnabled) { _, _ in reconcileSection() }
         .onAppear { reconcileSection() }
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             state.shutdown()
@@ -226,27 +229,68 @@ struct RootView: View {
     }
 
     private var shell: some View {
-        HStack(spacing: 0) {
-            if sidebarVisible {
-                SidebarView(section: $section)
-                    .environmentObject(membership)
-                    .frame(width: 220)
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-
-                Rectangle()
-                    .fill(EmTheme.hairline)
-                    .frame(width: 1)
+        NavigationSplitView {
+            List(selection: $section) {
+                let visible = AppSection.visible(deviceConnected: !state.devices.isEmpty, membership: membership)
+                ForEach(visible) { item in
+                    Label(item.title, systemImage: item.icon)
+                        .tag(item)
+                        .help(item.subtitle)
+                }
             }
-
+            .listStyle(.sidebar)
+        } detail: {
             VStack(spacing: 0) {
                 page
                     .padding(.top, 8)
-                Rectangle()
-                    .fill(EmTheme.hairline)
-                    .frame(height: 1)
-                StatusBar(showLog: $showLog)
             }
             .background(EmTheme.window)
+            .safeAreaInset(edge: .bottom) {
+                VStack(spacing: 0) {
+                    Rectangle()
+                        .fill(EmTheme.hairline)
+                        .frame(height: 1)
+                    StatusBar(showLog: $showLog)
+                }
+                .background(EmTheme.window)
+            }
+            .safeAreaInset(edge: .trailing) {
+                if showLibraryInspector {
+                    LibraryView(inspector: true, layout: $libraryLayout)
+                        .frame(width: 320)
+                        .background {
+                            if LiquidGlass.reducesTransparency {
+                                EmTheme.window
+                            } else {
+                                SidebarGlassSurface()
+                            }
+                        }
+                        .overlay(alignment: .leading) {
+                            Rectangle()
+                                .fill(EmTheme.hairline)
+                                .frame(width: 1)
+                        }
+                }
+            }
+        }
+        .navigationSplitViewColumnWidth(min: 220, ideal: 240, max: 280)
+        .toolbar(removing: .sidebarToggle)
+        .toolbar(removing: .title)
+        .toolbarTitleMenu { }
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                Button(action: toggleSidebar) {
+                    Image(systemName: "sidebar.leading")
+                }
+                .help("Show or hide the sidebar")
+
+                Button {
+                    withAnimation { showLibraryInspector.toggle() }
+                } label: {
+                    Image(systemName: "sidebar.right")
+                }
+                .help(showLibraryInspector ? "Hide Library" : "Show Library")
+            }
         }
     }
 
@@ -269,13 +313,17 @@ struct RootView: View {
                 section = .sideload
             }
         case .sideload: SideloadView()
-        case .library: LibraryView()
+        case .library: LibraryView(layout: $libraryLayout)
         case .jit: JitView()
         case .misc: MiscView()
         case .account: AccountView()
         case .settings: SettingsView()
         case .diagnostics: DiagnosticsView()
         }
+    }
+
+    private func toggleSidebar() {
+        NSApp.sendAction(#selector(NSSplitViewController.toggleSidebar(_:)), to: nil, from: nil)
     }
 
     private func reconcileSection() {
@@ -289,6 +337,7 @@ struct RootView: View {
             section = .devices
         }
     }
+
 }
 
 // MARK: - Status bar

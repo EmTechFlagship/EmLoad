@@ -18,7 +18,7 @@ Responses::
 
 Unsolicited events (no ``id``) carry progress, device changes and log lines::
 
-    {"event": "ready",    "version": "0.1.0", "python": "3.15.1"}
+    {"event": "ready",    "version": "0.1.0b5", "python": "3.15.1"}
     {"event": "progress", "id": 3, "phase": "sign", "percent": 40, "step": "..."}
     {"event": "log",      "id": 3, "message": "..."}
     {"event": "devices",  "data": [{"serial": "...", "connection_type": "usb"}]}

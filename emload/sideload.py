@@ -230,6 +230,21 @@ def _open_signed_dir(directory: str | None, deepest: int = 0) -> tuple[Path, Pat
     )
 
 
+def _install_signed(
+    output: str,
+    udid: str,
+    target_name: str,
+    progress: ProgressFn,
+) -> None:
+    """Upload and install a signed IPA, relaying installd's progress."""
+    progress("install", 0, f"Uploading to {target_name}\u2026")
+    apps.install(
+        output,
+        udid,
+        progress=lambda u: progress("install", *_install_relay(u, target_name)),
+    )
+
+
 def run_sideload(
     ipa_path: str,
     udid: str | None = None,
@@ -283,6 +298,7 @@ def run_sideload(
     target_dir, scratch = _open_signed_dir(signed_dir, ipa_module.deepest_entry(ipa_path))
     output = str(target_dir / f"{Path(ipa_path).stem}{SIGNED_SUFFIX}")
     profile_regenerations = 0
+    install_repaired = False
     try:
         # Installd can reject the signed app because its provisioning profile did
         # not verify on the device (stale/corrupt profile). When that happens,
@@ -304,12 +320,32 @@ def run_sideload(
                     temp_folder=str(scratch),
                 )
 
-                progress("install", 0, f"Uploading to {target_name}\u2026")
-                apps.install(
-                    output,
-                    udid,
-                    progress=lambda u: progress("install", *_install_relay(u, target_name)),
-                )
+                try:
+                    _install_signed(output, udid, target_name, progress)
+                except Exception as exc:
+                    if not apps.is_stale_install_journal_error(exc):
+                        raise
+                    # The package is fine; iOS cannot read the app's saved install
+                    # record. Removing that app drops the corrupt journal entry, and
+                    # the clean install below recreates it.
+                    broken_bundle_id = apps.stale_journal_bundle_id(exc) or target_bundle_id
+                    progress(
+                        "install", None,
+                        f"iOS's install record for {app_name} is damaged \u2014 "
+                        "reinstalling it to repair the record (on-device app data "
+                        "will be reset)\u2026",
+                    )
+                    try:
+                        apps.uninstall(broken_bundle_id, udid)
+                    except Exception as uninstall_exc:
+                        raise SideloadError(
+                            f"{app_name} is installed on {target_name}, but its iOS "
+                            "install record is damaged, so EmLoad could not upgrade or "
+                            "remove it. Delete the app on the device, then try again. "
+                            f"(iOS said: {exc})"
+                        ) from uninstall_exc
+                    install_repaired = True
+                    _install_signed(output, udid, target_name, progress)
                 break
             except Exception as exc:
                 if attempt >= MAX_PROFILE_REGENERATIONS or not (
@@ -359,6 +395,8 @@ def run_sideload(
     }
     if profile_regenerations:
         result["profile_regenerations"] = profile_regenerations
+    if install_repaired:
+        result["install_repaired"] = True
     if record:
         registry.record({
             **{key: value for key, value in result.items()

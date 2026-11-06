@@ -182,13 +182,6 @@ struct IPAStoreView: View {
 
     var body: some View {
         PageScroll {
-            HStack(spacing: 10) {
-                Spacer()
-                sourceManagerControl
-                filterControl
-                searchControl
-            }
-
             HStack(spacing: 8) {
                 if loading { ProgressView().controlSize(.small) }
                 Text(status)
@@ -265,6 +258,13 @@ struct IPAStoreView: View {
         }
         .task { await loadCatalog() }
         .animation(.spring(response: 0.3, dampingFraction: 0.82), value: searchExpanded)
+        .toolbar {
+            ToolbarItemGroup(placement: .primaryAction) {
+                sourceManagerControl
+                filterControl
+                searchControl
+            }
+        }
         .onChange(of: customSources) { updatedSources in
             Self.saveSources(updatedSources)
             Task { await loadCatalog() }
@@ -290,27 +290,12 @@ struct IPAStoreView: View {
         }
     }
 
-    @ViewBuilder
     private var sourceManagerControl: some View {
         Button {
             showSourceManager = true
         } label: {
             Image(systemName: "square.and.arrow.up")
-                .font(.system(size: 14, weight: .medium))
-                .foregroundStyle(EmTheme.label)
-                .frame(width: 38, height: 38)
-                .contentShape(Circle())
-                .background {
-                    if #available(macOS 26.0, *) {
-                        Circle().fill(.clear)
-                            .glassEffect(.regular.interactive(), in: Circle())
-                    } else {
-                        Circle().fill(EmTheme.elevated)
-                            .overlay(Circle().strokeBorder(EmTheme.hairline, lineWidth: 1))
-                    }
-                }
         }
-        .buttonStyle(.plain)
         .help("Manage app sources")
         .accessibilityLabel("App Sources")
     }
@@ -319,22 +304,9 @@ struct IPAStoreView: View {
         Button {
             showFilterPopover.toggle()
         } label: {
-            Image(systemName: "list.bullet")
-                .font(.system(size: 14, weight: .medium))
+            Image(systemName: "line.3.horizontal.decrease.circle")
                 .foregroundStyle(selectedCategory == "All" ? EmTheme.label : EmTheme.accent)
-                .frame(width: 38, height: 38)
-                .contentShape(Circle())
-                .background {
-                    if #available(macOS 26.0, *) {
-                        Circle().fill(.clear)
-                            .glassEffect(.regular.interactive(), in: Circle())
-                    } else {
-                        Circle().fill(EmTheme.elevated)
-                            .overlay(Circle().strokeBorder(EmTheme.hairline, lineWidth: 1))
-                    }
-                }
         }
-        .buttonStyle(.plain)
         .popover(isPresented: $showFilterPopover, arrowEdge: .top) {
             VStack(alignment: .leading, spacing: 4) {
                 Text("Filter by category")
@@ -394,12 +366,12 @@ struct IPAStoreView: View {
     @ViewBuilder
     private var searchControl: some View {
         if searchExpanded {
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: "magnifyingglass")
                     .foregroundStyle(EmTheme.secondary)
                 TextField("Search apps", text: $query)
                     .textFieldStyle(.plain)
-                    .frame(width: 205)
+                    .frame(width: 170)
                     .focused($searchFocused)
                     .onSubmit { searchFocused = false }
                 if !query.isEmpty {
@@ -425,17 +397,6 @@ struct IPAStoreView: View {
                 .buttonStyle(.plain)
                 .help("Collapse search")
             }
-            .padding(.horizontal, 12)
-            .frame(height: 36)
-            .background {
-                if #available(macOS 26.0, *) {
-                    Capsule().fill(.clear)
-                        .glassEffect(.regular.interactive(), in: Capsule())
-                } else {
-                    Capsule().fill(EmTheme.elevated)
-                        .overlay(Capsule().strokeBorder(EmTheme.hairline, lineWidth: 1))
-                }
-            }
             .transition(.scale(scale: 0.92, anchor: .trailing).combined(with: .opacity))
         } else {
             Button {
@@ -443,21 +404,7 @@ struct IPAStoreView: View {
                 DispatchQueue.main.async { searchFocused = true }
             } label: {
                 Image(systemName: "magnifyingglass")
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundStyle(EmTheme.label)
-                    .frame(width: 38, height: 38)
-                    .contentShape(Circle())
-                    .background {
-                        if #available(macOS 26.0, *) {
-                            Circle().fill(.clear)
-                                .glassEffect(.regular.interactive(), in: Circle())
-                        } else {
-                            Circle().fill(EmTheme.elevated)
-                                .overlay(Circle().strokeBorder(EmTheme.hairline, lineWidth: 1))
-                        }
-                    }
             }
-            .buttonStyle(.plain)
             .help("Search apps")
             .transition(.scale(scale: 0.82).combined(with: .opacity))
         }

@@ -227,3 +227,77 @@ def test_run_sideload_gives_up_after_max_regenerations(monkeypatch, tmp_path):
     # Bounded: exactly MAX regenerations, then the original failure surfaces.
     assert regen_calls["count"] == sideload.MAX_PROFILE_REGENERATIONS
     assert install_calls["count"] == sideload.MAX_PROFILE_REGENERATIONS + 1
+
+
+# --------------------------------------------------------------------------- #
+# Repairing a corrupt MobileInstallation journal entry
+# --------------------------------------------------------------------------- #
+JOURNAL_ERROR = (
+    "APIInternalError: Failed to unarchive journal entry data from "
+    "/var/installd/Library/MobileInstallation/Journal/"
+    "ECD7699C-B63D-4F4B-9CA0-A9D693551648_com.example.Demo.TEAM1234567.plist"
+)
+
+
+def test_run_sideload_repairs_corrupt_journal_by_reinstalling(monkeypatch, tmp_path):
+    from pymobiledevice3.exceptions import AppInstallError
+
+    from emload import apps, provision
+
+    _stub_sideload_env(monkeypatch, tmp_path)
+    install_calls = {"count": 0}
+
+    def fake_install(output, udid, progress=None):
+        install_calls["count"] += 1
+        if install_calls["count"] == 1:
+            raise AppInstallError(JOURNAL_ERROR)
+
+    monkeypatch.setattr(apps, "install", fake_install)
+    uninstalled: list[str] = []
+    monkeypatch.setattr(apps, "uninstall", lambda bundle_id, udid=None: uninstalled.append(bundle_id))
+
+    def fake_regenerate(*args, **kwargs):
+        raise AssertionError("journal corruption is not a provisioning problem")
+
+    monkeypatch.setattr(provision, "regenerate_profile", fake_regenerate)
+
+    result = sideload.run_sideload(
+        _fake_ipa(tmp_path),
+        "deadbeef",
+        signed_dir=str(tmp_path / "signed"),
+    )
+
+    assert install_calls["count"] == 2
+    assert uninstalled == ["com.example.Demo.TEAM1234567"]
+    assert result["status"] == "installed"
+    assert result["install_repaired"] is True
+    assert "profile_regenerations" not in result
+
+
+def test_run_sideload_reports_clear_error_when_journal_repair_cannot_uninstall(monkeypatch, tmp_path):
+    import pytest
+    from pymobiledevice3.exceptions import AppInstallError
+
+    from emload import apps
+
+    _stub_sideload_env(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        apps, "install",
+        lambda output, udid, progress=None: (_ for _ in ()).throw(AppInstallError(JOURNAL_ERROR)),
+    )
+    monkeypatch.setattr(
+        apps, "uninstall",
+        lambda bundle_id, udid=None: (_ for _ in ()).throw(RuntimeError("device refused")),
+    )
+
+    with pytest.raises(sideload.SideloadError) as excinfo:
+        sideload.run_sideload(
+            _fake_ipa(tmp_path),
+            "deadbeef",
+            signed_dir=str(tmp_path / "signed"),
+        )
+
+    message = str(excinfo.value)
+    assert "install record is damaged" in message
+    assert "Delete the app on the device" in message
+

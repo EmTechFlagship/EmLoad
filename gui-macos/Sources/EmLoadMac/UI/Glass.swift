@@ -1,4 +1,5 @@
 import AppKit
+import ObjectiveC
 import SwiftUI
 
 /// Flat dark chrome matching the EmLoad window: one charcoal surface, a
@@ -42,7 +43,51 @@ struct VisualEffectBackdrop: NSViewRepresentable {
 
 // MARK: - Window configuration
 
-/// Restores the standard opaque title bar over EmLoad's flat window surface.
+private var nativeSidebarToggleRemoverKey: UInt8 = 0
+
+/// Keeps SwiftUI's automatic sidebar toggle out of the title bar.
+///
+/// On macOS 26 `NavigationSplitView` ignores `.toolbar(removing: .sidebarToggle)`
+/// and re-adds its own toggle whenever the window or column state changes, so a
+/// one-shot removal is not enough. Observe each insertion and drop it again.
+private final class NativeSidebarToggleRemover {
+    private weak var window: NSWindow?
+    private var observer: NSObjectProtocol?
+
+    init(window: NSWindow) {
+        self.window = window
+        observer = NotificationCenter.default.addObserver(
+            forName: NSToolbar.willAddItemNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            guard let self,
+                  let toolbar = notification.object as? NSToolbar,
+                  toolbar === self.window?.toolbar else { return }
+            // The item is not in `items` yet; remove it once insertion finishes.
+            DispatchQueue.main.async { [weak self] in self?.remove() }
+        }
+    }
+
+    deinit {
+        if let observer {
+            NotificationCenter.default.removeObserver(observer)
+        }
+    }
+
+    func remove() {
+        guard let toolbar = window?.toolbar else { return }
+        let identifier = "com.apple.SwiftUI.navigationSplitView.toggleSidebar"
+        while let index = toolbar.items.firstIndex(where: {
+            $0.itemIdentifier.rawValue == identifier
+        }) {
+            toolbar.removeItem(at: index)
+        }
+    }
+}
+
+/// Applies the transparent title bar / full-size content view needed for the
+/// flat window surface to reach every edge, including behind the traffic lights.
 struct WindowConfigurator: NSViewRepresentable {
     func makeNSView(context: Context) -> NSView {
         let view = NSView(frame: .zero)
@@ -58,18 +103,37 @@ struct WindowConfigurator: NSViewRepresentable {
         guard let window else { return }
 
         window.title = "EmLoad"
-        window.titleVisibility = .visible
-        window.titlebarAppearsTransparent = false
-        window.titlebarSeparatorStyle = .automatic
-        window.toolbar = nil
+        window.titleVisibility = .hidden
+        window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
+        window.styleMask.insert(.fullSizeContentView)
+        window.toolbarStyle = .unified
         window.isMovableByWindowBackground = false
         window.hasShadow = true
-        window.isOpaque = true
+        window.isOpaque = false
         window.backgroundColor = EmTheme.windowNS
 
         window.standardWindowButton(.closeButton)?.isHidden = false
         window.standardWindowButton(.miniaturizeButton)?.isHidden = false
         window.standardWindowButton(.zoomButton)?.isHidden = false
+
+        let remover: NativeSidebarToggleRemover
+        if let existing = objc_getAssociatedObject(
+            window, &nativeSidebarToggleRemoverKey
+        ) as? NativeSidebarToggleRemover {
+            remover = existing
+        } else {
+            remover = NativeSidebarToggleRemover(window: window)
+            objc_setAssociatedObject(
+                window,
+                &nativeSidebarToggleRemoverKey,
+                remover,
+                .OBJC_ASSOCIATION_RETAIN_NONATOMIC
+            )
+        }
+        remover.remove()
+        DispatchQueue.main.async { remover.remove() }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { remover.remove() }
     }
 }
 

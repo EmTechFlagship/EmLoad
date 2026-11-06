@@ -5,10 +5,20 @@ enum LibraryLayout {
     case grid
 }
 
+/// Shared state for the titlebar tray. The Library owns the real work; the
+/// toolbar only needs enough to reflect busy/app-count state.
+@MainActor
+final class LibraryToolbarModel: ObservableObject {
+    @Published var isLoading = false
+    @Published var isRefreshing = false
+    @Published var appCount = 0
+}
+
 struct LibraryView: View {
     var inspector = false
     @Binding var layout: LibraryLayout
     @EnvironmentObject private var state: AppState
+    @EnvironmentObject private var toolbarModel: LibraryToolbarModel
 
     @State private var apps: [LibraryApp] = []
     @State private var isLoading = false
@@ -26,16 +36,23 @@ struct LibraryView: View {
     var body: some View {
         PageScroll(horizontalPadding: inspector ? 12 : 32) {
             if inspector {
-                Text("Library")
-                    .font(.system(size: 17, weight: .semibold))
-                    .foregroundStyle(EmTheme.label)
+                HStack(spacing: 8) {
+                    Spacer(minLength: 0)
+                    LibraryToolbar(
+                        layout: $layout,
+                        isBusy: isLoading || isRefreshing,
+                        hasApps: !apps.isEmpty,
+                        reload: { Task { await reload() } },
+                        refreshAll: {
+                            Task { await refresh(bundleIds: apps.map(\.bundleId)) }
+                        }
+                    )
+                }
             } else {
                 PageHeader(
                     title: "Your Library",
                     subtitle: "Apps EmLoad has installed, with the time left on each signature."
-                ) {
-                    libraryActions(compact: false)
-                }
+                )
             }
 
             if !inspector, let notice = setupNotice {
@@ -60,9 +77,11 @@ struct LibraryView: View {
                         : "Sideload an app and it will appear here. Refresh re-signs and reinstalls before the profile expires."
                 )
             } else {
-                if inspector && layout == .grid {
-                    LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible())], spacing: 8) {
-                        ForEach(apps) { inspectorGridCard($0) }
+                if layout == .grid {
+                    LazyVGrid(columns: gridColumns, spacing: inspector ? 8 : 12) {
+                        ForEach(apps) { app in
+                            if inspector { inspectorGridCard(app) } else { gridCard(app) }
+                        }
                     }
                 } else {
                     VStack(spacing: 2) {
@@ -75,6 +94,14 @@ struct LibraryView: View {
         }
         .task(id: state.isReady) {
             if state.isReady { await reload() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .emloadLibraryReload)) { _ in
+            Task { await reload() }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .emloadLibraryRefreshAll)) { _ in
+            if !isRefreshing && !apps.isEmpty {
+                Task { await refresh(bundleIds: apps.map(\.bundleId)) }
+            }
         }
         .alert(
             pendingAction?.title ?? "",
@@ -97,31 +124,11 @@ struct LibraryView: View {
 
     // MARK: - Row
 
-    @ViewBuilder
-    private func libraryActions(compact: Bool) -> some View {
-        HStack(spacing: compact ? 2 : 8) {
-            Button {
-                Task { await reload() }
-            } label: {
-                Image(systemName: "arrow.clockwise")
-            }
-            .emSecondaryButton()
-            .disabled(isLoading || isRefreshing)
-            .help("Reload the library")
-
-            Button {
-                Task { await refresh(bundleIds: apps.map(\.bundleId)) }
-            } label: {
-                if compact {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                } else {
-                    Label("Refresh all", systemImage: "arrow.triangle.2.circlepath")
-                }
-            }
-            .emPrimaryButton()
-            .disabled(apps.isEmpty || isRefreshing)
-            .help("Refresh all apps")
+    private var gridColumns: [GridItem] {
+        if inspector {
+            return [GridItem(.flexible()), GridItem(.flexible())]
         }
+        return [GridItem(.adaptive(minimum: 168, maximum: 220), spacing: 12)]
     }
 
     private func inspectorRow(_ app: LibraryApp) -> some View {
@@ -203,6 +210,37 @@ struct LibraryView: View {
         }
         .menuStyle(.borderlessButton)
         .disabled(isRefreshing)
+    }
+
+    private func gridCard(_ app: LibraryApp) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .top) {
+                AppIconView(dataURI: app.icon, size: 44)
+                Spacer(minLength: 0)
+                appMenu(app)
+            }
+            Text(app.displayName)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(EmTheme.label)
+                .lineLimit(1)
+            Text(installedLine(app))
+                .font(.system(size: 11))
+                .foregroundStyle(EmTheme.secondary)
+                .lineLimit(1)
+            Text(app.timeLeftText)
+                .font(.system(size: 10, weight: .medium))
+                .foregroundStyle(app.expired ? Color.red.opacity(0.9) : EmTheme.secondary)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Capsule().fill(Color.white.opacity(0.08)))
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, minHeight: 132, alignment: .topLeading)
+        .background(EmTheme.elevated, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(EmTheme.hairline, lineWidth: 1)
+        }
     }
 
     private var setupNotice: String? {
@@ -324,9 +362,14 @@ struct LibraryView: View {
     private func reload() async {
         guard state.engine != nil, !isLoading else { return }
         isLoading = true
-        defer { isLoading = false }
+        toolbarModel.isLoading = true
+        defer {
+            isLoading = false
+            toolbarModel.isLoading = false
+        }
         do {
             apps = LibraryApp.list(from: try await state.call("library.list"))
+            toolbarModel.appCount = apps.count
             if apps.isEmpty {
                 status = ""
             }
@@ -338,12 +381,14 @@ struct LibraryView: View {
     private func refresh(bundleIds: [String]) async {
         guard !bundleIds.isEmpty, !isRefreshing else { return }
         isRefreshing = true
+        toolbarModel.isRefreshing = true
         activeRefreshBundleID = nil
         refreshProgress = nil
         status = "Refreshing \(bundleIds.count) app(s)…"
         state.setBusy(true, status)
         defer {
             isRefreshing = false
+            toolbarModel.isRefreshing = false
             activeRefreshBundleID = nil
             refreshProgress = nil
             state.setBusy(false)
@@ -469,5 +514,102 @@ struct LibraryView: View {
                 return "Remove the sideload record for \(app.displayName)? This does not uninstall it or delete its signing certificate."
             }
         }
+    }
+}
+
+/// The grouped library actions shown at the trailing edge of the titlebar.
+struct LibraryToolbar: View {
+    @Binding var layout: LibraryLayout
+    var isBusy = false
+    var hasApps = false
+    let reload: () -> Void
+    let refreshAll: () -> Void
+
+    var body: some View {
+        HStack(spacing: 0) {
+            LibraryToolbarButton(
+                systemImage: "arrow.clockwise",
+                help: "Reload the library",
+                disabled: isBusy,
+                action: reload
+            )
+
+            LibraryToolbarButton(
+                systemImage: "arrow.triangle.2.circlepath",
+                help: "Re-sign and reinstall all apps",
+                disabled: isBusy || !hasApps,
+                action: refreshAll
+            )
+
+            LibraryToolbarButton(
+                systemImage: "list.bullet",
+                help: "List view",
+                selected: layout == .list
+            ) {
+                layout = .list
+            }
+
+            LibraryToolbarButton(
+                systemImage: "square.grid.2x2",
+                help: "Grid view",
+                selected: layout == .grid
+            ) {
+                layout = .grid
+            }
+        }
+        .padding(3)
+        .background {
+            if LiquidGlass.reducesTransparency {
+                Capsule().fill(EmTheme.elevated)
+            } else {
+                Capsule()
+                    .fill(Color.white.opacity(0.02))
+                    .glassEffect(.regular, in: Capsule())
+            }
+        }
+        .overlay(Capsule().strokeBorder(Color.white.opacity(0.12), lineWidth: 1))
+        .fixedSize()
+    }
+}
+
+/// One icon button inside the library's rounded action tray. The selected
+/// view mode gets a raised, outlined capsule so the active layout reads at a
+/// glance.
+private struct LibraryToolbarButton: View {
+    let systemImage: String
+    let help: String
+    var selected = false
+    var disabled = false
+    let action: () -> Void
+
+    @State private var hovering = false
+
+    private let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+    private let width: CGFloat = 32
+    private let height: CGFloat = 27
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 13, weight: selected ? .semibold : .medium))
+                .foregroundStyle(selected ? EmTheme.label : EmTheme.secondary)
+                .frame(width: width, height: height)
+                .background {
+                    if selected {
+                        shape
+                            .fill(Color.white.opacity(0.10))
+                            .overlay(shape.strokeBorder(Color.white.opacity(0.16), lineWidth: 1))
+                    } else if hovering {
+                        shape.fill(Color.white.opacity(0.06))
+                    }
+                }
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(disabled)
+        .opacity(disabled ? 0.4 : 1)
+        .onHover { hovering = $0 }
+        .help(help)
+        .accessibilityLabel(help)
     }
 }
