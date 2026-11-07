@@ -146,6 +146,8 @@ enum UpdateError: LocalizedError {
 enum AppUpdateChecker {
     static let repository = "EmTechFlagship/EmLoadServer"
     static let releasesURL = URL(string: "https://api.github.com/repos/\(repository)/releases?per_page=30")!
+    /// OTA starts with RC 1. Betas and anything older are not offered.
+    static let earliest = ReleaseVersion.parse("0.1.0-rc1")!
 
     static var architecture: String {
         #if arch(arm64)
@@ -187,7 +189,11 @@ enum AppUpdateChecker {
         architecture: String
     ) -> AppUpdate? {
         let ranked = releases.compactMap { release -> (ReleaseVersion, GitHubRelease)? in
-            guard !release.draft, let version = ReleaseVersion.parse(release.tagName), version > current else {
+            guard !release.draft,
+                  let version = ReleaseVersion.parse(release.tagName),
+                  version >= earliest,
+                  version > current
+            else {
                 return nil
             }
             return (version, release)
@@ -271,8 +277,8 @@ enum AppUpdateChecker {
         let trimmed = body
             .replacingOccurrences(of: "\r\n", with: "\n")
             .trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.count > 700 else { return trimmed }
-        let end = trimmed.index(trimmed.startIndex, offsetBy: 700)
+        guard trimmed.count > 8_000 else { return trimmed }
+        let end = trimmed.index(trimmed.startIndex, offsetBy: 8_000)
         return String(trimmed[..<end]).trimmingCharacters(in: .whitespacesAndNewlines) + "…"
     }
 }

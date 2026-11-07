@@ -18,7 +18,7 @@ Responses::
 
 Unsolicited events (no ``id``) carry progress, device changes and log lines::
 
-    {"event": "ready",    "version": "0.1.0b5", "python": "3.15.1"}
+    {"event": "ready",    "version": "0.1.0rc1", "python": "3.15.1"}
     {"event": "progress", "id": 3, "phase": "sign", "percent": 40, "step": "..."}
     {"event": "log",      "id": 3, "message": "..."}
     {"event": "devices",  "data": [{"serial": "...", "connection_type": "usb"}]}
@@ -57,6 +57,7 @@ from . import (
     registry,
     sideload,
     signing,
+    update,
 )
 from .errors import EmLoadError
 from .nugget import schema as nugget_schema
@@ -583,6 +584,14 @@ class Handlers:
     def signing_download(self, _params: dict[str, Any]) -> dict[str, Any]:
         return _as_dict(signing.download_zsign())
 
+    def app_update_check(self, _params: dict[str, Any]) -> dict[str, Any]:
+        return update.check()
+
+    def app_update_apply(self, params: dict[str, Any], progress: Callable[..., None]) -> dict[str, Any]:
+        host = params.get("host_pid")
+        host_pid = int(host) if host else None
+        return update.apply(host_pid=host_pid, on_progress=progress)
+
     def certificate_transfer_status(self, _params: dict[str, Any]) -> dict[str, Any]:
         from . import server
 
@@ -649,6 +658,7 @@ _STREAMING = {
     "nugget.apply": "nugget_apply",
     "nugget.respring": "nugget_respring",
     "jit.enable": "jit_enable",
+    "app.update.apply": "app_update_apply",
 }
 
 #: Public method name -> Handlers attribute. Underscored names never leak out.
@@ -683,6 +693,8 @@ _METHODS = {
     "settings.set": "settings_set",
     "signing.status": "signing_status",
     "signing.download": "signing_download",
+    "app.update.check": "app_update_check",
+    "app.update.apply": "app_update_apply",
     "certificate.transfer.status": "certificate_transfer_status",
     "certificate.transfer.start": "certificate_transfer_start",
     "certificate.transfer.stop": "certificate_transfer_stop",

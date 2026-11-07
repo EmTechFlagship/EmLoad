@@ -63,6 +63,9 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
   configuration by default so the post-reboot "Swipe up to upgrade" flow
   is skipped on OS versions that honor it and on-device settings aren't reset.
 - **Diagnostics** (`emload doctor`) that tell you exactly what's missing
+- **Updates from RC 1**: the Windows app, the macOS app, and `emload update`
+  check GitHub releases (including pre-releases). A newer Windows install
+  downloads and replaces itself; the Mac app does the same for `EmLoad.app`
 
 ## Requirements
 
@@ -164,6 +167,8 @@ emload profiles              list provisioning profiles installed on the device
 emload unprovision <uuid>    remove one provisioning profile (--all removes every one)
 emload signed [--clean]      report / delete kept signed IPAs
 emload setup                 download zsign (needed for signing)
+emload update                check GitHub for a newer release (RC 1 and later)
+emload update --install      download it and replace this Windows install
 emload emside-store status   EmSideStore state: sign-in, devices, IPA options
 emload emside-store install  sideload SideStore onto connected device(s) now
 emload emside-store watch    install or refresh SideStore on device attach

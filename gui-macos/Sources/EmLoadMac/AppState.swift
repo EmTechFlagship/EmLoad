@@ -98,6 +98,7 @@ final class AppState: ObservableObject {
             if let update = try await AppUpdateChecker.latest(newerThan: current) {
                 availableUpdate = update
                 appendLog("Update available: \(update.title)")
+                NotificationCenter.default.post(name: .emloadPresentUpdate, object: nil)
             } else if interactive {
                 alertMessage = "EmLoad \(current.description) is up to date."
             }

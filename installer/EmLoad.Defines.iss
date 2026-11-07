@@ -29,12 +29,12 @@
 #endif
 
 #ifndef AppPrerelease
-  #define AppPrerelease "Beta 2"
+  #define AppPrerelease "RC 1"
 #endif
 
-; Used in file names: EmLoad-Setup-0.1.0-beta2.exe
+; Used in file names: EmLoad-Setup-0.1.0-rc1.exe
 #ifndef OutputTag
-  #define OutputTag "0.1.0-beta2"
+  #define OutputTag "0.1.0-rc1"
 #endif
 
 #define AppName "EmLoad"
@@ -42,5 +42,5 @@
 #define AppUrl "https://github.com/EmTechFlagship/EmLoadServer"
 #define AppExeName "EmLoad.WinUI.exe"
 
-; Shown to the user: EmLoad 0.1.0 Beta 2
+; Shown to the user: EmLoad 0.1.0 RC 1
 #define BuildLabel AppVersion + " " + AppPrerelease

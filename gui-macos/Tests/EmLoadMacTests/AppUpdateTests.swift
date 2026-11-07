@@ -48,25 +48,44 @@ final class AppUpdateTests: XCTestCase {
     func testLegacyWrapperWhenItIsTheOnlyMacArchive() throws {
         let json = """
         [{
-          "tag_name": "v0.1.0-beta1",
-          "name": "EmLoad 0.1.0 Beta 1",
+          "tag_name": "v0.1.0-rc1",
+          "name": "EmLoad 0.1.0 RC 1",
           "prerelease": true,
           "draft": false,
-          "html_url": "https://github.com/EmTechFlagship/EmLoadServer/releases/tag/v0.1.0-beta1",
-          "body": "First beta",
+          "html_url": "https://github.com/EmTechFlagship/EmLoadServer/releases/tag/v0.1.0-rc1",
+          "body": "First OTA release candidate",
           "assets": [
-            {"name": "EmLoad-0.1.0-beta1-win-x64.zip", "browser_download_url": "https://github.com/EmTechFlagship/EmLoad/releases/download/v0.1.0-beta1/EmLoad-0.1.0-beta1-win-x64.zip"},
-            {"name": "emload-macos-0.1.0-beta1.zip", "browser_download_url": "https://github.com/EmTechFlagship/EmLoad/releases/download/v0.1.0-beta1/emload-macos-0.1.0-beta1.zip"}
+            {"name": "EmLoad-0.1.0-rc1-win-x64.zip", "browser_download_url": "https://github.com/EmTechFlagship/EmLoad/releases/download/v0.1.0-rc1/EmLoad-0.1.0-rc1-win-x64.zip"},
+            {"name": "emload-macos-0.1.0-rc1.zip", "browser_download_url": "https://github.com/EmTechFlagship/EmLoad/releases/download/v0.1.0-rc1/emload-macos-0.1.0-rc1.zip"}
           ]
         }]
         """
         let releases = try AppUpdateChecker.parseReleases(json.data(using: .utf8)!)
         let update = AppUpdateChecker.select(
             releases: releases,
-            current: ReleaseVersion.parse("0.1.0-beta0")!,
+            current: ReleaseVersion.parse("0.1.0-beta5")!,
             architecture: "arm64"
         )
-        XCTAssertEqual(update?.assetName, "emload-macos-0.1.0-beta1.zip")
+        XCTAssertEqual(update?.assetName, "emload-macos-0.1.0-rc1.zip")
+    }
+
+    func testIgnoresReleasesBeforeRc1() throws {
+        let json = """
+        [{
+          "tag_name": "v0.1.0-beta5",
+          "name": "EmLoad 0.1.0 Beta 5",
+          "prerelease": true,
+          "draft": false,
+          "html_url": "https://github.com/EmTechFlagship/EmLoadServer/releases/tag/v0.1.0-beta5",
+          "assets": [{"name": "EmLoad-0.1.0-beta5-macos.zip", "browser_download_url": "https://github.com/EmTechFlagship/EmLoadServer/releases/download/v0.1.0-beta5/EmLoad-0.1.0-beta5-macos.zip"}]
+        }]
+        """
+        let releases = try AppUpdateChecker.parseReleases(json.data(using: .utf8)!)
+        XCTAssertNil(AppUpdateChecker.select(
+            releases: releases,
+            current: ReleaseVersion.parse("0.1.0-beta1")!,
+            architecture: "arm64"
+        ))
     }
 
     func testIgnoresDraftsAndUntrustedLinks() throws {

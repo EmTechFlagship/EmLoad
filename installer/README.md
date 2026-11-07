@@ -46,12 +46,19 @@ self-contained (`WindowsPackageType=None`).
 | Parameter | Default | Appears in |
 | --- | --- | --- |
 | `-Version` | `0.1.0` | file version, `AppVersion` |
-| `-Prerelease` | `Beta 2` | "EmLoad 0.1.0 Beta 2" in Setup and Apps list |
+| `-Prerelease` | `RC 1` | "EmLoad 0.1.0 RC 1" in Setup and Apps list |
 | `-OutputTag` | `<version>-<slug>` (`0.1.0-beta2`) | output file names |
 
-The Python side carries the matching PEP 440 version (`0.1.0b2` in
+The Python side carries the matching PEP 440 version (`0.1.0rc1` in
 `pyproject.toml` and `emload/__init__.py`). Keep the two in sync when cutting a
 release.
+
+RC 1 is the first build that checks GitHub for a newer release, including
+pre-releases. The WinUI app asks on launch and from Settings. A Setup install
+runs the newer `EmLoad-Setup-*.exe` silently; a portable folder is replaced
+from `EmLoad-*-win-x64.zip`. `emload update` does the same check, and
+`emload update --install` applies it. Releases tagged before `v0.1.0-rc1`,
+including the betas, are not offered.
 
 ### Releasing from GitHub Actions
 

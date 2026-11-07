@@ -64,7 +64,8 @@ Each time the packaged app opens, it asks GitHub for a newer release and
 includes pre-releases (a stable "latest" check would skip betas). When a
 newer build exists, EmLoad offers to download the macOS archive, replace
 this `EmLoad.app`, and reopen. The release build stamps `EmLoadRelease` in
-the bundle (for example `0.1.0-beta2`) so a later beta compares as newer.
+the bundle (for example `0.1.0-rc1`) so a later pre-release compares as newer.
+Updates start with RC 1; beta tags are not offered.
 Set `EMLOAD_SKIP_UPDATES=1` to skip that automatic check. Check for Updates
 in the application menu runs the same check on demand.
 

@@ -44,7 +44,7 @@
 [CmdletBinding()]
 param(
     [string]$Version = '0.1.0',
-    [string]$Prerelease = 'Beta 2',
+    [string]$Prerelease = 'RC 1',
     [string]$OutputTag,
 
     [string]$Iscc,

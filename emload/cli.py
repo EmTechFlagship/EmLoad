@@ -23,6 +23,8 @@
     emload unprovision <uuid>    remove a provisioning profile from the device
     emload signed [--clean]      report / delete kept signed IPAs
     emload setup                 download zsign (needed for signing)
+    emload update                check GitHub for a newer release (RC 1 and later)
+    emload update --install      download it and replace this Windows install
     emload emside-store status   show EmSideStore state (sign-in, devices, IPA)
     emload emside-store install  install SideStore on connected device(s) once
     emload emside-store watch    keep running; auto-install SideStore on attach
@@ -43,7 +45,7 @@ import sys
 import threading
 from typing import Any, Callable
 
-from . import __version__, anisette, apps, device, doctor, gsa, ipa, jit, paths, provision, registry, server, sideload, signing
+from . import __version__, anisette, apps, device, doctor, gsa, ipa, jit, paths, provision, registry, server, sideload, signing, update
 from .errors import EmLoadError
 
 
@@ -124,6 +126,14 @@ def cmd_device_info(args: argparse.Namespace) -> int:
 
 def cmd_version(args: argparse.Namespace) -> int:
     _emit(args, {"version": __version__})
+    return 0
+
+
+def cmd_update(args: argparse.Namespace) -> int:
+    if args.install:
+        _emit(args, update.apply(on_progress=_progress(args)))
+        return 0
+    _emit(args, update.check())
     return 0
 
 
@@ -610,6 +620,14 @@ def build_parser() -> argparse.ArgumentParser:
     signed_parser.add_argument("--directory", default=None, help="folder to inspect")
 
     setup_parser = sub.add_parser("setup", parents=[common], help="download zsign (required to sign)")
+    update_parser = sub.add_parser(
+        "update", parents=[common],
+        help="check for a newer GitHub release (pre-releases included, from RC 1)",
+    )
+    update_parser.add_argument(
+        "--install", action="store_true",
+        help="download the update and replace this Windows install, then quit",
+    )
     setup_parser.add_argument("--force", action="store_true", help="re-download even if present")
 
     emstore_parser = sub.add_parser(
@@ -711,6 +729,7 @@ def dispatch(args: argparse.Namespace) -> int:
         "unprovision": cmd_unprovision,
         "signed": cmd_signed,
         "setup": cmd_setup,
+        "update": cmd_update,
         "emside-store": cmd_emstore_server,
         "emstore-server": cmd_emstore_server,
         "emside-store-server": cmd_emstore_server,

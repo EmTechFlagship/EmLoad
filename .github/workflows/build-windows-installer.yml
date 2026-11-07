@@ -11,7 +11,7 @@ on:
       channel:
         description: Release channel
         required: false
-        default: 'Beta 2'
+        default: 'RC 1'
         type: string
       offline:
         description: Bundle Python dependency wheels for offline installation

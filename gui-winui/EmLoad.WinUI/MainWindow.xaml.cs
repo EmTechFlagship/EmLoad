@@ -1,3 +1,4 @@
+using System.Text.Json;
 using EmLoad.WinUI.Pages;
 using EmLoad.WinUI.Services;
 using Microsoft.UI.Composition.SystemBackdrops;
@@ -13,6 +14,8 @@ namespace EmLoad.WinUI;
 public sealed partial class MainWindow : Window
 {
     private bool _started;
+    private bool _didAutoCheckForUpdate;
+    private bool _updateDialogOpen;
     private string? _currentNavigationTag;
 
     public static MainWindow Shell => (MainWindow)App.Current.MainAppWindow!;
@@ -90,6 +93,7 @@ public sealed partial class MainWindow : Window
             HideStartup();
             EngineBadge.Text = $"emload {App.Current.State.EngineVersion} · Python engine";
             SetBusy(false);
+            await CheckForAppUpdateAsync(interactive: false);
             // Seed the first page with the freshly loaded device list.
             if (ContentFrame.Content is DevicesPage devices)
             {
@@ -112,6 +116,189 @@ public sealed partial class MainWindow : Window
     {
         App.Current.State.Shutdown();
         await StartEngineAsync();
+    }
+
+    /// <summary>
+    /// Looks for a GitHub release newer than this build, including pre-releases
+    /// from RC 1 on. The automatic check runs once per launch.
+    /// </summary>
+    public async Task CheckForAppUpdateAsync(bool interactive)
+    {
+        if (_updateDialogOpen)
+        {
+            return;
+        }
+        if (!interactive)
+        {
+            if (_didAutoCheckForUpdate)
+            {
+                return;
+            }
+            _didAutoCheckForUpdate = true;
+            if (Environment.GetEnvironmentVariable("EMLOAD_SKIP_UPDATES") == "1")
+            {
+                return;
+            }
+        }
+
+        var engine = App.Current.State.Engine;
+        if (engine is null || Content.XamlRoot is null)
+        {
+            if (interactive)
+            {
+                SetStatus("The engine is not running, so EmLoad cannot check for updates.");
+            }
+            return;
+        }
+
+        JsonElement result;
+        try
+        {
+            result = await engine.CallAsync("app.update.check");
+        }
+        catch (Exception exc)
+        {
+            App.Current.State.AppendLog($"Update check failed: {exc.Message}");
+            if (interactive)
+            {
+                await Ui.ShowMessageAsync(Content.XamlRoot, "EmLoad", exc.Message);
+            }
+            return;
+        }
+
+        if (!result.TryGetProperty("update", out var update)
+            || update.ValueKind is JsonValueKind.Null or JsonValueKind.Undefined)
+        {
+            if (interactive)
+            {
+                await Ui.ShowMessageAsync(
+                    Content.XamlRoot,
+                    "EmLoad",
+                    $"EmLoad {JsonString(result, "current")} is up to date.");
+            }
+            return;
+        }
+
+        var current = JsonString(result, "current");
+        var version = JsonString(update, "version");
+        var title = JsonString(update, "title");
+        var notes = JsonString(update, "notes");
+        var html = JsonString(update, "html_url");
+        var prerelease = update.TryGetProperty("prerelease", out var preFlag)
+            && preFlag.ValueKind == JsonValueKind.True;
+        var canApply = update.TryGetProperty("can_apply", out var applyFlag)
+            && applyFlag.ValueKind == JsonValueKind.True;
+        if (!interactive && !canApply)
+        {
+            return;
+        }
+        var kind = prerelease ? "pre-release" : "release";
+        var message = $"You have {current}. {version} is a newer GitHub {kind}.";
+        message += canApply
+            ? "\n\nDownload and restart closes EmLoad, installs the update, and opens it again."
+            : "\n\nThis copy cannot replace itself. The release page has the download.";
+        if (!string.IsNullOrWhiteSpace(notes))
+        {
+            message += "\n\n" + notes;
+        }
+
+        App.Current.State.AppendLog($"Update available: {(string.IsNullOrWhiteSpace(title) ? version : title)}");
+
+        var dialog = new ContentDialog
+        {
+            Title = string.IsNullOrWhiteSpace(title) ? "Update available" : title,
+            Content = new TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 440,
+            },
+            CloseButtonText = "Later",
+            DefaultButton = ContentDialogButton.Close,
+            XamlRoot = Content.XamlRoot,
+        };
+        if (canApply)
+        {
+            dialog.PrimaryButtonText = "Download and restart";
+            dialog.SecondaryButtonText = "View release";
+            dialog.SecondaryButtonClick += (_, _) => OpenRelease(html);
+        }
+        else
+        {
+            dialog.PrimaryButtonText = "View release";
+        }
+
+        string? updateError = null;
+        dialog.PrimaryButtonClick += async (_, args) =>
+        {
+            if (!canApply)
+            {
+                OpenRelease(html);
+                return;
+            }
+
+            var deferral = args.GetDeferral();
+            args.Cancel = true;
+            dialog.IsPrimaryButtonEnabled = false;
+            dialog.IsSecondaryButtonEnabled = false;
+            try
+            {
+                SetBusy(true, "Downloading update…");
+                var applied = await engine.CallAsync(
+                    "app.update.apply",
+                    new Dictionary<string, object?> { ["host_pid"] = Environment.ProcessId },
+                    progress => SetStatus(progress.Step ?? "Downloading update…"));
+                if (JsonString(applied, "status") == "relaunching")
+                {
+                    App.Current.State.AppendLog($"Installing {JsonString(applied, "version")} and reopening.");
+                    Close();
+                    return;
+                }
+                OpenRelease(JsonString(applied, "html_url"));
+                args.Cancel = false;
+            }
+            catch (Exception exc)
+            {
+                updateError = exc.Message;
+                App.Current.State.AppendLog($"Update failed: {exc.Message}");
+                SetStatus("Update failed");
+                args.Cancel = false;
+            }
+            finally
+            {
+                SetBusy(false);
+                deferral.Complete();
+            }
+        };
+
+        _updateDialogOpen = true;
+        try
+        {
+            await dialog.ShowAsync();
+        }
+        finally
+        {
+            _updateDialogOpen = false;
+        }
+        if (updateError is not null && Content.XamlRoot is not null)
+        {
+            await Ui.ShowMessageAsync(Content.XamlRoot, "Update failed", updateError);
+        }
+    }
+
+    private static void OpenRelease(string url)
+    {
+        if (Uri.TryCreate(url, UriKind.Absolute, out var uri))
+        {
+            _ = Windows.System.Launcher.LaunchUriAsync(uri);
+        }
+    }
+
+    private static string JsonString(JsonElement element, string name)
+    {
+        return element.TryGetProperty(name, out var value) && value.ValueKind == JsonValueKind.String
+            ? value.GetString() ?? ""
+            : "";
     }
 
     // ------------------------------------------------------------------ //

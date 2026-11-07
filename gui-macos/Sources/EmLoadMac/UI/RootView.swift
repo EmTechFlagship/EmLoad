@@ -25,12 +25,27 @@ struct EmLoadMacApp: App {
                 .keyboardShortcut("d", modifiers: [.command, .shift])
             }
         }
+
+        Window("Software Update", id: AppWindow.update) {
+            UpdatePopup()
+                .environmentObject(state)
+        }
+        .windowStyle(.hiddenTitleBar)
+        .defaultSize(width: 520, height: 520)
+        .windowResizability(.contentMinSize)
+        .defaultLaunchBehavior(.suppressed)
+        .restorationBehavior(.disabled)
     }
+}
+
+enum AppWindow {
+    static let update = "emload-update"
 }
 
 extension Notification.Name {
     static let emloadShowDiagnostics = Notification.Name("EmLoadShowDiagnostics")
     static let emloadCheckForUpdates = Notification.Name("EmLoadCheckForUpdates")
+    static let emloadPresentUpdate = Notification.Name("EmLoadPresentUpdate")
     static let emloadLibraryRefreshAll = Notification.Name("EmLoadLibraryRefreshAll")
     static let emloadLibraryReload = Notification.Name("EmLoadLibraryReload")
 }
@@ -140,6 +155,7 @@ enum AppSection: String, CaseIterable, Identifiable {
 }
 
 struct RootView: View {
+    @Environment(\.openWindow) private var openWindow
     @EnvironmentObject private var state: AppState
     @StateObject private var membership = PatreonSubscription()
     @StateObject private var libraryToolbar = LibraryToolbarModel()
@@ -171,9 +187,8 @@ struct RootView: View {
         .environmentObject(libraryToolbar)
         .task { await state.initialize() }
         .task { await state.checkForAppUpdate() }
-        .sheet(item: $state.availableUpdate) { update in
-            UpdateSheet(update: update)
-                .environmentObject(state)
+        .onReceive(NotificationCenter.default.publisher(for: .emloadPresentUpdate)) { _ in
+            openWindow(id: AppWindow.update)
         }
         .sheet(isPresented: $state.showLogin) {
             LoginSheet()

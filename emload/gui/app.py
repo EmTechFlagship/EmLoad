@@ -25,8 +25,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from PySide6.QtCore import QSize, Qt, Signal
-from PySide6.QtGui import QColor, QDragEnterEvent, QDropEvent, QIcon, QPixmap
+from PySide6.QtCore import QSize, Qt, QUrl, Signal
+from PySide6.QtGui import QColor, QDesktopServices, QDragEnterEvent, QDropEvent, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -149,6 +149,7 @@ class MainWindow(QMainWindow):
         self._nugget_dialog: Any | None = None
         # Serials an EmSideStore install is already running for (no duplicates).
         self._emstore_busy: set[str] = set()
+        self._update_checked = False
 
         # Sidebar navigation + stacked pages (instead of a tab bar).
         # Colors come from the active palette (palette(...) roles), so the
@@ -1170,6 +1171,13 @@ class MainWindow(QMainWindow):
         self.data_dir_label.setWordWrap(True)
         layout.addWidget(self.data_dir_label)
 
+        self.update_label = QLabel(f"Updates: EmLoad {__version__} (RC 1 and later)")
+        self.update_label.setWordWrap(True)
+        self.update_button = QPushButton("Check for updates")
+        self.update_button.clicked.connect(lambda: self._check_for_update(interactive=True))
+        layout.addWidget(self.update_label)
+        layout.addWidget(self.update_button)
+
         self.keep_signed_default = QCheckBox("Keep signed .ipa files by default")
         self.keep_signed_default.toggled.connect(self._save_settings)
         layout.addWidget(self.keep_signed_default)
@@ -1280,6 +1288,95 @@ class MainWindow(QMainWindow):
         super().showEvent(event)
         self._load_settings()
         self.run_diagnostics()
+        if not self._update_checked:
+            self._update_checked = True
+            self._check_for_update(interactive=False)
+
+    def _check_for_update(self, interactive: bool) -> None:
+        import os
+
+        from .. import update
+
+        if not interactive and os.environ.get("EMLOAD_SKIP_UPDATES") == "1":
+            return
+
+        def on_error(worker: TaskWorker, message: str) -> None:
+            self._prune_workers(worker)
+            self.log(f"Update check failed: {message}")
+            if interactive:
+                QMessageBox.warning(self, "EmLoad", message)
+
+        self.run_task(
+            update.check,
+            on_done=lambda result: self._offer_update(result, interactive),
+            on_error=on_error,
+        )
+
+    def _offer_update(self, result: dict[str, Any], interactive: bool) -> None:
+        found = result.get("update") if isinstance(result, dict) else None
+        current = result.get("current") if isinstance(result, dict) else __version__
+        if not found:
+            if interactive:
+                QMessageBox.information(self, "EmLoad", f"EmLoad {current} is up to date.")
+            return
+        if not interactive and not found.get("can_apply"):
+            return
+
+        kind = "pre-release" if found.get("prerelease") else "release"
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Information)
+        box.setWindowTitle("EmLoad")
+        box.setText(found.get("title") or f"EmLoad {found.get('version')}")
+        notes = found.get("notes") or ""
+        detail = (
+            f"You have {current}. {found.get('version')} is a newer GitHub {kind}."
+        )
+        if found.get("can_apply"):
+            detail += "\n\nDownload and restart closes EmLoad, installs the update, and opens it again."
+        else:
+            detail += "\n\nThis copy cannot replace itself. The release page has the download."
+        if notes:
+            detail += f"\n\n{notes}"
+        box.setInformativeText(detail)
+        box.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+        view = box.addButton("View release", QMessageBox.ButtonRole.ActionRole)
+        install = None
+        if found.get("can_apply"):
+            install = box.addButton("Download and restart", QMessageBox.ButtonRole.AcceptRole)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked is view:
+            QDesktopServices.openUrl(QUrl(str(found.get("html_url") or "")))
+        elif install is not None and clicked is install:
+            self._install_update()
+
+    def _install_update(self) -> None:
+        import os
+
+        from .. import update
+
+        self.statusBar().showMessage("Downloading update…")
+
+        def on_done(result: dict[str, Any]) -> None:
+            if result.get("status") == "relaunching":
+                self.log(f"Installing {result.get('version')} and reopening.")
+                QApplication.quit()
+                return
+            url = str(result.get("html_url") or "")
+            if url:
+                QDesktopServices.openUrl(QUrl(url))
+            QMessageBox.information(
+                self,
+                "EmLoad",
+                "This copy cannot replace itself. The release page is open.",
+            )
+
+        def on_error(worker: TaskWorker, message: str) -> None:
+            self._prune_workers(worker)
+            self.log(f"Update failed: {message}")
+            QMessageBox.critical(self, "EmLoad", message)
+
+        self.run_task(update.apply, host_pid=os.getpid(), on_done=on_done, on_error=on_error)
 
 
 def run_gui() -> int:

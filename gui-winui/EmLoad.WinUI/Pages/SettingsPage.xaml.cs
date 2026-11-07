@@ -38,7 +38,21 @@ public sealed partial class SettingsPage : Page
             _loading = false;
         }
 
+        UpdateText.Text = $"EmLoad {State.EngineVersion}. Checks GitHub releases, including pre-releases, from RC 1 on.";
         await RefreshZsignAsync();
+    }
+
+    private async void CheckUpdates_Click(object sender, RoutedEventArgs e)
+    {
+        UpdateButton.IsEnabled = false;
+        try
+        {
+            await MainWindow.Shell.CheckForAppUpdateAsync(interactive: true);
+        }
+        finally
+        {
+            UpdateButton.IsEnabled = true;
+        }
     }
 
     private void Apply(SettingsSnapshot settings)

@@ -71,6 +71,21 @@
             </Border>
 
             <Border Style="{StaticResource CardBorder}">
+                <StackPanel Spacing="10">
+                    <TextBlock Text="Updates" FontWeight="SemiBold" />
+                    <TextBlock
+                        x:Name="UpdateText"
+                        TextWrapping="Wrap"
+                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                        Text="Checks GitHub releases, including pre-releases, from RC 1 on." />
+                    <Button
+                        x:Name="UpdateButton"
+                        Content="Check for updates"
+                        Click="CheckUpdates_Click" />
+                </StackPanel>
+            </Border>
+
+            <Border Style="{StaticResource CardBorder}">
                 <StackPanel Spacing="6">
                     <TextBlock Text="Data directory" FontWeight="SemiBold" />
                     <TextBlock
