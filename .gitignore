@@ -49,3 +49,6 @@ gui-macos/*.xcodeproj/
 
 # EmLoadiOS (embedded repo, kept out of this repo for now)
 EmLoadiOS/
+
+# macOS
+.DS_Store
