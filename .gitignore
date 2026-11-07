@@ -47,6 +47,5 @@ EmLoadServer/.swiftpm/
 gui-macos/*.xcodeproj/
 *.xcworkspace/
 
-# EmLoadiOS
-EmLoadiOS/EmLoadiOS.xcworkspace/
-EmLoadiOS/*.xcodeproj/
+# EmLoadiOS (embedded repo, kept out of this repo for now)
+EmLoadiOS/
