@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>EmLoad for macOS — Sideload any IPA with a free Apple ID</title>
+    <meta
+      name="description"
+      content="EmLoad is a native macOS app that installs any IPA on your iPhone with a free Apple ID. No jailbreak, no paid developer account. Apple silicon and Intel."
+    />
+    <meta name="theme-color" content="#f7f4ff" />
+    <meta property="og:title" content="EmLoad for macOS" />
+    <meta
+      property="og:description"
+      content="Sideload any IPA with a free Apple ID. No jailbreak. No paid developer account."
+    />
+    <meta property="og:type" content="website" />
+    <meta property="og:image" content="./assets/emload-icon.png" />
+    <link rel="icon" href="./assets/favicon.png" type="image/png" />
+    <link rel="apple-touch-icon" href="./assets/emload-icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Roboto+Flex:opsz,wdth,wght@8..144,25..151,100..1000&amp;family=Roboto+Mono:wght@400;500&amp;display=swap"
+      rel="stylesheet"
+    />
+    <script>
+      (() => {
+        document.documentElement.classList.add("js");
+        try {
+          const saved = localStorage.getItem("emload-theme");
+          const dark = saved
+            ? saved === "dark"
+            : window.matchMedia("(prefers-color-scheme: dark)").matches;
+          document.documentElement.dataset.theme = dark ? "dark" : "light";
+          document.documentElement.style.colorScheme = dark ? "dark" : "light";
+        } catch (_) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

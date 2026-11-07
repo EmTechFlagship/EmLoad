@@ -34,3 +34,5 @@ vendor/zsign/
 output/
 *.ipa
 *.log
+# EmLoadiOS (embedded repo, kept out of this repo for now)
+EmLoadiOS/
