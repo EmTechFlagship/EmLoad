@@ -5,7 +5,7 @@
 #   ./gui-macos/scripts/build-app.sh            # native build -> gui-macos/dist/EmLoad.app
 #   RUN=1 ./gui-macos/scripts/build-app.sh       # build, sign, and launch
 #
-# The Swift binary is only a shell. The actual engine is the EmLoadEngine
+# The Swift binary is only a shell. The actual engine is the emload
 # Python package, copied into Contents/Resources/engine so the app keeps working
 # if the checkout is moved. Python itself (and its pip dependencies) still has
 # to be available; see gui-macos/README.md.
@@ -113,17 +113,17 @@ fi
 # Ship the engine source with the app. Running from the bundle still needs a
 # Python interpreter with requirements.txt installed; PythonLocator prefers the
 # checkout's .venv when one is present.
-if [[ -d "$REPO/EmLoadEngine" ]]; then
+if [[ -d "$REPO/emload" ]]; then
+    ditto "$REPO/emload" "$ENGINE/emload"
+elif [[ -d "$REPO/EmLoadEngine" ]]; then
     mkdir -p "$ENGINE/EmLoadEngine"
     rsync -a --exclude '.git' --exclude '.venv' --exclude '__pycache__' \
         "$REPO/EmLoadEngine/" "$ENGINE/EmLoadEngine/"
-elif [[ -d "$REPO/emload" ]]; then
-    ditto "$REPO/emload" "$ENGINE/emload"
 fi
-if [[ -f "$REPO/EmLoadEngine/pyproject.toml" ]]; then
-    cp "$REPO/EmLoadEngine/pyproject.toml" "$ENGINE/pyproject.toml"
-elif [[ -f "$REPO/pyproject.toml" ]]; then
+if [[ -f "$REPO/pyproject.toml" ]]; then
     cp "$REPO/pyproject.toml" "$ENGINE/pyproject.toml"
+elif [[ -f "$REPO/EmLoadEngine/pyproject.toml" ]]; then
+    cp "$REPO/EmLoadEngine/pyproject.toml" "$ENGINE/pyproject.toml"
 fi
 if [[ -f "$REPO/requirements.txt" ]]; then
     cp "$REPO/requirements.txt" "$ENGINE/requirements.txt"

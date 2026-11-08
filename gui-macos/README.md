@@ -1,7 +1,7 @@
 # EmLoad for macOS (SwiftUI)
 
 A native SwiftUI shell for the existing EmLoad Python engine. It speaks the
-same newline-delimited JSON-RPC protocol as the WinUI app (`EmLoadEngine rpc`), so
+same newline-delimited JSON-RPC protocol as the WinUI app (`emload rpc`), so
 there is exactly one implementation of Apple ID auth, provisioning, signing,
 installation, refresh and the Nugget tweak schema.
 
@@ -9,7 +9,7 @@ installation, refresh and the Nugget tweak schema.
 EmLoad.app (SwiftUI)
       │  JSON lines over stdin/stdout
       ▼
-python -m EmLoadEngine rpc
+python -m emload rpc
       │
       ├── gsa / anisette      Apple ID + 2FA
       ├── provision           certificates, App IDs, profiles
@@ -25,16 +25,17 @@ python -m EmLoadEngine rpc
 - Apple silicon or Intel Mac
 - macOS 26 Tahoe or newer
 - Xcode 16 or newer
-- Python 3.10+ with the engine installed. The Mac app does not ship the
-  engine inside this repo. Clone it, then work from that directory:
+- Python 3.10+ with the engine installed from this repository:
   ```bash
-  git clone https://github.com/EmTechFlagship/EmLoadEngine.git
-  cd EmLoadEngine
+  git clone https://github.com/EmTechFlagship/EmLoad.git
+  cd EmLoad
   python3 -m venv .venv
   .venv/bin/python -m pip install -e .
-  .venv/bin/python -m EmLoadEngine setup
-  .venv/bin/python -m EmLoadEngine doctor
+  .venv/bin/python -m emload setup
+  .venv/bin/python -m emload doctor
   ```
+  The Python package is `emload/` at the root of this checkout. Build the app
+  from that same directory.
 - An iPhone/iPad with Developer Mode enabled and a trusted pairing
 - `zsign` (the build script compiles it for this Mac and bundles it; Settings
   can also download the official Apple silicon release or compile from source)
@@ -79,7 +80,7 @@ bundle. The script:
 
 1. runs `swift build -c release` for x86_64 and arm64;
 2. assembles `EmLoad.app/Contents/{MacOS,Resources}`;
-3. copies the cloned `EmLoadEngine/` package and `pyproject.toml` into
+3. copies the `emload/` package and `pyproject.toml` into
    `Contents/Resources/engine/`;
 4. writes the checkout path to `Contents/Resources/engine-root.txt`;
 5. compiles `zsign` and installs it in the bundle and in Application Support;
@@ -120,7 +121,7 @@ The title bar is hidden and transparent, with a full-size content view. If
 2. `EMLOAD_ROOT` + `.venv/bin/python3` / `python`
 3. The checkout recorded in `Contents/Resources/engine-root.txt`
 4. `Contents/Resources/engine` (bundled source)
-5. Common checkout folders (`~/EmLoadEngine`, `~/Developer/EmLoadEngine`, …)
+5. Common checkout folders (`~/EmLoad`, `~/EmLoadEngine`, `~/Developer/EmLoad`, …)
 6. `/opt/homebrew/bin/python3`, `/usr/local/bin/python3`, `/usr/bin/python3`,
    then `python3` on `PATH`
 
@@ -189,7 +190,7 @@ RPC methods remain in the source, so re-enabling it is a one-line change.
 Run the command shown in the error with the same interpreter:
 
 ```bash
-/Users/you/EmLoadEngine/.venv/bin/python -m EmLoadEngine doctor
+/Users/you/EmLoad/.venv/bin/python -m emload doctor
 ```
 
 **`ModuleNotFoundError: requests` / `pymobiledevice3`**
@@ -197,7 +198,7 @@ The app found a system Python without the engine's dependencies. Create a venv
 in the checkout, `pip install -e .`, and relaunch (or set `EMLOAD_PYTHON`).
 
 **No devices**
-Unlock the phone and tap Trust. Check `EmLoadEngine devices` in Terminal. On macOS,
+Unlock the phone and tap Trust. Check `emload devices` in Terminal. On macOS,
 `pymobiledevice3` uses `usbmuxd` from the system; no Apple Devices app is
 needed.
 

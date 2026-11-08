@@ -3,7 +3,7 @@ rem EmLoad CLI launcher - always uses the project virtual environment.
 setlocal
 cd /d "%~dp0"
 
-if not exist ".venv\Scripts\EmLoadEngine.exe" (
+if not exist ".venv\Scripts\emload.exe" (
     echo Virtual environment not found. Create it first:
     echo   python -m venv .venv
     echo   .venv\Scripts\pip install -r requirements.txt
@@ -11,4 +11,4 @@ if not exist ".venv\Scripts\EmLoadEngine.exe" (
     exit /b 1
 )
 
-".venv\Scripts\EmLoadEngine.exe" %*
+".venv\Scripts\emload.exe" %*

@@ -6,7 +6,7 @@ struct PythonLocation {
     let root: String
 }
 
-/// Finds a Python interpreter that can run `python -m EmLoadEngine rpc`.
+/// Finds a Python interpreter that can run `python -m emload rpc`.
 ///
 /// Resolution order:
 /// 1. `EMLOAD_PYTHON` (full path to an interpreter)
@@ -53,6 +53,11 @@ enum PythonLocator {
     private static func commonRoots() -> [String] {
         let home = NSHomeDirectory()
         return [
+            "\(home)/EmLoad",
+            "\(home)/Developer/EmLoad",
+            "\(home)/Documents/EmLoad",
+            "\(home)/src/EmLoad",
+            "\(home)/Projects/EmLoad",
             "\(home)/EmLoadEngine",
             "\(home)/Developer/EmLoadEngine",
             "\(home)/Documents/EmLoadEngine",

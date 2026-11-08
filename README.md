@@ -9,7 +9,7 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
 
 ```
 ┌─────────────────────┐   engine (Python)   ┌──────────────────────────┐
-│ EmLoadEngine (CLI)  │                     │ Apple ID auth (GrandSlam)│
+│ emload (CLI)        │                     │ Apple ID auth (GrandSlam)│
 │ EmLoad.app (macOS)  │ ──────────────────▶ │ + anisette (in-process)  │
 └─────────────────────┘                     │ + provisioning API       │
                                             │ + zsign code signing     │
@@ -26,7 +26,7 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
 - **Automatic provisioning**: registers your device, issues a 7-day development
   certificate, creates the App ID, and downloads the profile — all via Apple's
   `developerservices2` API
-- **Code signing with `zsign`** (SHA-256 CodeDirectory) — `EmLoadEngine setup`
+- **Code signing with `zsign`** (SHA-256 CodeDirectory) — `emload setup`
   downloads or builds `zsign` for this Mac
 - **App-Store-encrypted detection**: EmLoad refuses FairPlay-encrypted IPAs
   before wasting a round trip
@@ -78,32 +78,19 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
 
 ### macOS app
 
-Clone the engine, then install the Mac app from the published disk image:
+Clone this repository and install the CLI from the project root:
 
 ```bash
-git clone https://github.com/EmTechFlagship/EmLoadEngine.git
-cd EmLoadEngine
+git clone https://github.com/EmTechFlagship/EmLoad.git
+cd EmLoad
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
-.venv/bin/python -m EmLoadEngine setup
-.venv/bin/python -m EmLoadEngine doctor
-.venv/bin/python -m EmLoadEngine install-gui
+.venv/bin/python -m emload setup
+.venv/bin/python -m emload doctor
 ```
 
-`install-gui` downloads the newest `EmLoad.app` disk image and copies it to
-`/Applications`. Later updates are applied by the app itself. See
-[gui-macos/README.md](gui-macos/README.md) to build the app from source.
-
-### Engine from source
-
-```bash
-git clone https://github.com/EmTechFlagship/EmLoadEngine.git
-cd EmLoadEngine
-python3 -m venv .venv
-.venv/bin/python -m pip install -e .
-.venv/bin/python -m EmLoadEngine setup
-.venv/bin/python -m EmLoadEngine doctor
-```
+The Python package is `emload/` in this repository. See
+[gui-macos/README.md](gui-macos/README.md) to build the Mac app.
 
 ## CLI
 
@@ -178,10 +165,10 @@ and `--connection usb|wifi|auto`.
 Typical first sideload:
 
 ```bash
-EmLoadEngine doctor
-EmLoadEngine login --email you@icloud.com
-EmLoadEngine sideload MyApp.ipa
-EmLoadEngine installs                 # see "6.9d left"
+emload doctor
+emload login --email you@icloud.com
+emload sideload MyApp.ipa
+emload installs                 # see "6.9d left"
 ```
 
 ### Sideload options
@@ -224,7 +211,7 @@ The Mac app has a sidebar with these pages:
 - **Diagnostics** — `doctor` results rendered
 
 `gui-macos/` is a native SwiftUI shell that drives the same Python engine over
-the newline-delimited JSON-RPC bridge (`EmLoadEngine rpc`). It is not a second
+the newline-delimited JSON-RPC bridge (`emload rpc`). It is not a second
 implementation: sideloading, provisioning, signing, refresh and the Misc tweak
 schema all stay in Python.
 
@@ -236,16 +223,13 @@ The build compiles `zsign` from source
 (upstream does not publish an Intel macOS binary) and bundles it in the app.
 
 ```bash
-# 1. Clone the engine and install it from that directory
-git clone https://github.com/EmTechFlagship/EmLoadEngine.git
-cd EmLoadEngine
+git clone https://github.com/EmTechFlagship/EmLoad.git
+cd EmLoad
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
-.venv/bin/python -m EmLoadEngine setup      # downloads zsign for macOS
-.venv/bin/python -m EmLoadEngine doctor
+.venv/bin/python -m emload setup
+.venv/bin/python -m emload doctor
 
-# 2. Build EmLoad.app from the EmLoad checkout
-cd ..
 ./gui-macos/scripts/build-app.sh      # -> gui-macos/dist/EmLoad.app
 open gui-macos/dist/EmLoad.app
 ```
@@ -325,7 +309,7 @@ default is SideStore (New).
 
 ## Troubleshooting
 
-- **"zsign not found"** — run `EmLoadEngine setup`. To use your own build, set
+- **"zsign not found"** — run `emload setup`. To use your own build, set
   `EMLOAD_ZSIGN` to the binary, put `zsign` in `vendor/`, or add it to `PATH`.
 - **2FA code never arrives** — EmLoad's locale/timezone headers are
   normalized for Apple's endpoints; if you still see nothing, check that your
