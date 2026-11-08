@@ -1,7 +1,7 @@
 # EmLoad
 
 Sideload iOS apps with a free Apple ID — an AltServer-style toolkit with a
-**Python CLI** and a **PySide6 desktop app**.
+**Python CLI** and a **native macOS app**.
 
 No jailbreak. No paid developer account. EmLoad talks to Apple directly, the
 same way Xcode does, and to your iPhone over USB/Wi-Fi through
@@ -9,8 +9,8 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
 
 ```
 ┌─────────────────────┐   engine (Python)   ┌──────────────────────────┐
-│ emload (CLI)        │                     │ Apple ID auth (GrandSlam)│
-│ emload-gui (PySide6)│ ──────────────────▶ │ + anisette (in-process)  │
+│ EmLoadEngine (CLI)  │                     │ Apple ID auth (GrandSlam)│
+│ EmLoad.app (macOS)  │ ──────────────────▶ │ + anisette (in-process)  │
 └─────────────────────┘                     │ + provisioning API       │
                                             │ + zsign code signing     │
                                             │ + pymobiledevice3 device │
@@ -26,8 +26,8 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
 - **Automatic provisioning**: registers your device, issues a 7-day development
   certificate, creates the App ID, and downloads the profile — all via Apple's
   `developerservices2` API
-- **Code signing with `zsign`** (SHA-256 CodeDirectory) — `emload setup`
-  downloads a prebuilt Windows binary for you
+- **Code signing with `zsign`** (SHA-256 CodeDirectory) — `EmLoadEngine setup`
+  downloads or builds `zsign` for this Mac
 - **App-Store-encrypted detection**: EmLoad refuses FairPlay-encrypted IPAs
   before wasting a round trip
 - **Team-scoped bundle IDs** for free accounts, plus optional overrides
@@ -63,84 +63,47 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
   configuration by default so the post-reboot "Swipe up to upgrade" flow
   is skipped on OS versions that honor it and on-device settings aren't reset.
 - **Diagnostics** (`emload doctor`) that tell you exactly what's missing
-- **Updates from RC 1**: the Windows app, the macOS app, and `emload update`
-  check GitHub releases (including pre-releases). A newer Windows install
-  downloads and replaces itself; the Mac app does the same for `EmLoad.app`
+- **Updates from RC 1**: the macOS app checks GitHub releases (including
+  pre-releases) and replaces `EmLoad.app` when a newer build is published
 
 ## Requirements
 
-- Windows 10/11, Linux, or a Mac (native macOS app on Apple silicon and Intel)
+- Linux, or a Mac (native macOS app on Apple silicon and Intel)
 - Python 3.10+ (3.12 recommended — `pymobiledevice3` needs prebuilt wheels)
-- Apple **Devices** (or iTunes) from the Microsoft Store on Windows — that's what
-  provides the USB/`usbmuxd` service
 - An Apple ID (a spare one is a good idea)
 - An iPhone with **Developer Mode** enabled (iOS 16+, `Settings → Privacy &
   Security → Developer Mode`) if you're on a recent iOS
 
 ## Install
 
-### Windows installer (recommended)
+### macOS app
 
-Download these from the **0.1.0 Beta 1** release:
+Clone the engine, then install the Mac app from the published disk image:
 
-| File | What you get |
-| --- | --- |
-| `EmLoad-Setup-0.1.0-beta1.exe` | WinUI 3 desktop app + Python engine |
-| `EmLoad-Cli-Setup-0.1.0-beta1.exe` | `emload` on your PATH (plus `emload gui` if you keep PySide6) |
-| `EmLoad-0.1.0-beta1-win-x64.zip` | Portable folder, no installer — run `First-Run.cmd` |
-
-The prerelease also includes `EmLoad-0.1.0-beta1-macos.dmg` for a
-drag-and-drop install on Apple silicon and Intel Macs, plus a ZIP archive. See
-[gui-macos/README.md](gui-macos/README.md) for macOS requirements and setup.
-
-Both installers are **per-user and need no admin rights**. They install to
-`%LOCALAPPDATA%\Programs\EmLoad` (desktop) or `...\EmLoad CLI`, create a private
-virtual environment there, and install `requirements.txt` into it. That means:
-
-- **Python 3.10+ must already be installed** — use the
-  [python.org](https://www.python.org/downloads/windows/) build, not the
-  Microsoft Store stub. The installer finds `py -3.12`/`python`/registry
-  installs automatically and prefers 3.12/3.13.
-- The desktop installer skips the optional PySide6 GUI (~150 MB) unless you
-  tick it; the CLI installer includes it by default.
-- An internet connection is needed while the installer fetches the packages
-  (build with `-Offline` to carry a wheelhouse instead).
-
-After installing, run once from a terminal:
-
-```powershell
-emload setup        # downloads zsign (required for signing)
-emload doctor       # check your environment
+```bash
+git clone https://github.com/EmTechFlagship/EmLoadEngine.git
+cd EmLoadEngine
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m EmLoadEngine setup
+.venv/bin/python -m EmLoadEngine doctor
+.venv/bin/python -m EmLoadEngine install-gui
 ```
 
-Uninstall from **Settings → Apps**. Your Apple ID sign-in, certificates and
-install history in `%LOCALAPPDATA%\EmLoad` are kept.
+`install-gui` downloads the newest `EmLoad.app` disk image and copies it to
+`/Applications`. Later updates are applied by the app itself. See
+[gui-macos/README.md](gui-macos/README.md) to build the app from source.
 
-### From source
+### Engine from source
 
-```powershell
-git clone https://github.com/EmTechFlagship/EmLoadServer
-cd EmLoadServer
-py -3.12 -m venv .venv
-.\.venv\Scripts\python -m pip install -e .          # CLI + engine
-.\.venv\Scripts\python -m pip install -e ".[gui]"   # + PySide6 GUI
-emload setup        # downloads zsign (required for signing)
-emload doctor       # check your environment
+```bash
+git clone https://github.com/EmTechFlagship/EmLoadEngine.git
+cd EmLoadEngine
+python3 -m venv .venv
+.venv/bin/python -m pip install -e .
+.venv/bin/python -m EmLoadEngine setup
+.venv/bin/python -m EmLoadEngine doctor
 ```
-
-> Installing PySide6 only adds the PySide6 GUI; the CLI works without it via
-> `pip install -e .` alone.
-
-### Building the installers
-
-```powershell
-powershell -File installer\build-installer.ps1
-```
-
-Releases are built by CI: push a tag such as `v0.1.0-beta1` and
-`.github/workflows/release.yml` builds the three artifacts and publishes them
-as a GitHub release. See [installer/README.md](installer/README.md) for the
-version knobs, offline builds and how the engine bootstrap works.
 
 ## CLI
 
@@ -168,12 +131,10 @@ emload unprovision <uuid>    remove one provisioning profile (--all removes ever
 emload signed [--clean]      report / delete kept signed IPAs
 emload setup                 download zsign (needed for signing)
 emload update                check GitHub for a newer release (RC 1 and later)
-emload update --install      download it and replace this Windows install
 emload emside-store status   EmSideStore state: sign-in, devices, IPA options
 emload emside-store install  sideload SideStore onto connected device(s) now
 emload emside-store watch    install or refresh SideStore on device attach
 emload emside-store serve    run the HTTP API and EmLoad certificate transfer endpoint
-emload gui                   launch the desktop app
 ```
 
 Every command accepts `--json` for scripting. Device commands accept `--udid`
@@ -214,18 +175,13 @@ and `--connection usb|wifi|auto`.
 > the token and uses TLS; stop the server after importing. The transfer URL is
 > available only while this command is running.
 
-> **On Windows, if `emload` isn't on your PATH**, use the repo's `emload.bat`
-> launcher instead (it always runs the project's `.venv`), e.g.
-> `emload.bat doctor`. A bare `python -m emload` may hit a *different* Python
-> on your PATH that lacks the dependencies.
-
 Typical first sideload:
 
-```powershell
-emload doctor
-emload login --email you@icloud.com
-emload sideload MyApp.ipa
-emload installs                 # see "6.9d left"
+```bash
+EmLoadEngine doctor
+EmLoadEngine login --email you@icloud.com
+EmLoadEngine sideload MyApp.ipa
+EmLoadEngine installs                 # see "6.9d left"
 ```
 
 ### Sideload options
@@ -238,17 +194,12 @@ emload sideload App.ipa \
   --keep-uisd                     # default strips UISupportedDevices
   --file-sharing                  # enable Files-app sharing
   --keep-signed                   # keep <App>_Signed.ipa on disk
-  --signed-dir D:\signed          # where signed files + scratch go
+  --signed-dir ~/signed           # where signed files + scratch go
 ```
 
-## GUI
+## macOS app
 
-```powershell
-emload gui
-# or on Windows: run.bat  (always uses the project's .venv)
-```
-
-The desktop app has a sidebar with seven pages:
+The Mac app has a sidebar with these pages:
 
 - **Devices** — live inventory (USB + Wi-Fi), refreshed automatically as
   devices attach/detach. When a phone plugs in and the cached provisioning
@@ -271,8 +222,6 @@ The desktop app has a sidebar with seven pages:
 - **Account** — Apple ID sign-in with a 2FA-aware dialog
 - **Settings** — connection preference, signed-IPA folder, zsign download
 - **Diagnostics** — `doctor` results rendered
-
-### macOS app (SwiftUI)
 
 `gui-macos/` is a native SwiftUI shell that drives the same Python engine over
 the newline-delimited JSON-RPC bridge (`EmLoadEngine rpc`). It is not a second
@@ -360,7 +309,7 @@ default is SideStore (New).
 4. **Provisioning** — `developerservices2.apple.com`: list team, submit CSR,
    register device, create App ID, download `embedded.mobileprovision`. The
    private key never leaves the machine; cert + profile are cached per account
-   under `%LOCALAPPDATA%\EmLoad\`.
+   under `~/Library/Application Support/EmLoad/` on a Mac.
 5. **Signing** — `zsign` re-signs the IPA with the provisioning profile, new
    bundle id, and stripped extensions, then the signed IPA is uploaded to the
    device via AFC and installed via installd.
@@ -376,17 +325,15 @@ default is SideStore (New).
 
 ## Troubleshooting
 
-- **"Could not reach the Apple Mobile Device Service"** — install Apple Devices
-  (or iTunes) from the Microsoft Store, then restart EmLoad.
-- **"zsign not found"** — run `emload setup`. To use your own build, set
-  `EMLOAD_ZSIGN` to the binary, put `zsign.exe` in `emload/vendor/`, or add it
-  to `PATH`.
+- **"zsign not found"** — run `EmLoadEngine setup`. To use your own build, set
+  `EMLOAD_ZSIGN` to the binary, put `zsign` in `vendor/`, or add it to `PATH`.
 - **2FA code never arrives** — EmLoad's locale/timezone headers are
   normalized for Apple's endpoints; if you still see nothing, check that your
   trusted devices are reachable and try `--connection wifi` for the phone.
 - **Path too long to sign** — choose a shorter "Signed IPA folder" in Settings.
-- **Logs/state** — everything lives in `%LOCALAPPDATA%\EmLoad\` (accounts,
-  anisette, signing material, `sideloads.json` registry). Delete it to reset.
+- **Logs/state** — on a Mac, everything lives in
+  `~/Library/Application Support/EmLoad/` (accounts, anisette, signing
+  material, `sideloads.json` registry). Delete it to reset.
 
 ## Security notes
 
