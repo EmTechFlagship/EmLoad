@@ -53,7 +53,7 @@ same way Xcode does, and to your iPhone over USB/Wi-Fi through
   turns on just-in-time compilation until that process quits. Available from
   `emload jit` and the macOS app's JIT page. Needs Developer Mode and a
   development signature (`get-task-allow`, which EmLoad's profiles include)
-- **Miscellaneous tweaks (Nugget-based)**: SpringBoard options, daemon toggles
+- **Miscellaneous tweaks**: SpringBoard options, daemon toggles
   and Liquid Glass settings applied with the sparserestore backup-restore
   exploit on iOS 17.0 - 18.1, or **BookRestore** (AFC / Restore methods) on
   iOS 18.2+. **iOS 27 applies are hard-blocked**: Apple's changed setup flow
@@ -265,7 +265,7 @@ The desktop app has a sidebar with seven pages:
 - **Library** — every sideload this machine has done, with days-left and
   one-click **Refresh** / **Uninstall** / **Forget**
 - **Miscellaneous** — SpringBoard / Daemons / Liquid Glass tweak dialogs and
-  a **Respring Device** button (Nugget-style apply: sparserestore on iOS
+  a **Respring Device** button (sparserestore on iOS
   17.0 - 18.1, BookRestore AFC or Restore on 18.2+; the dialogs expose
   apply-method and transfer-mode options)
 - **Account** — Apple ID sign-in with a 2FA-aware dialog
@@ -397,11 +397,5 @@ default is SideStore (New).
 
 ## License
 
-MIT. EmLoad is not affiliated with Apple Inc. Only install software you are
-entitled to run.
-
-The Miscellaneous tweak feature (the `emload.nugget` package and the dialogs
-in `emload/gui/nugget_dialogs.py`) is ported from
-[Nugget27](https://github.com/leminlimez/Nugget/), which is licensed under
-the **AGPL-3.0**; ported files carry attribution headers. Same for the
-respring HTML asset. Please respect that license if you reuse that code.
+No license. All rights reserved. EmLoad is not affiliated with Apple Inc. Only
+install software you are entitled to run.
