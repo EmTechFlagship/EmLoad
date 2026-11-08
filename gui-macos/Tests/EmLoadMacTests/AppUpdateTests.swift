@@ -38,6 +38,30 @@ final class AppUpdateTests: XCTestCase {
         XCTAssertTrue(update?.prerelease == true)
     }
 
+    func testPrefersDiskImageOverZipForTheSameRelease() throws {
+        let json = """
+        [{
+          "tag_name": "v0.2.0-rc1",
+          "name": "EmLoad 0.2.0 RC 1",
+          "prerelease": true,
+          "draft": false,
+          "html_url": "https://github.com/EmTechFlagship/EmLoadServer/releases/tag/v0.2.0-rc1",
+          "assets": [
+            {"name": "EmLoad-0.2.0-rc1-macos-arm64.zip", "browser_download_url": "https://github.com/EmTechFlagship/EmLoadServer/releases/download/v0.2.0-rc1/EmLoad-0.2.0-rc1-macos-arm64.zip"},
+            {"name": "EmLoad-0.2.0-rc1-macos-arm64.dmg", "browser_download_url": "https://github.com/EmTechFlagship/EmLoadServer/releases/download/v0.2.0-rc1/EmLoad-0.2.0-rc1-macos-arm64.dmg"},
+            {"name": "EmLoad-0.2.0-rc1-macos.dmg", "browser_download_url": "https://github.com/EmTechFlagship/EmLoadServer/releases/download/v0.2.0-rc1/EmLoad-0.2.0-rc1-macos.dmg"}
+          ]
+        }]
+        """
+        let releases = try AppUpdateChecker.parseReleases(json.data(using: .utf8)!)
+        let update = AppUpdateChecker.select(
+            releases: releases,
+            current: ReleaseVersion.parse("0.1.0-rc1")!,
+            architecture: "arm64"
+        )
+        XCTAssertEqual(update?.assetName, "EmLoad-0.2.0-rc1-macos-arm64.dmg")
+    }
+
     func testUsesUniversalArchiveWhenCpuArchiveIsMissing() throws {
         let releases = try AppUpdateChecker.parseReleases(fixture.data(using: .utf8)!)
         let current = ReleaseVersion.parse("0.0.1")!

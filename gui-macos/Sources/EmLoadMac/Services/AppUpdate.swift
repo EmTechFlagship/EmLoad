@@ -220,21 +220,30 @@ enum AppUpdateChecker {
         return nil
     }
 
-    /// Prefer this Mac's app archive (`EmLoad-<version>-macos[-arch].zip`) over
-    /// the older wrapper that bundles that zip together with a disk image.
+    /// Prefer this Mac's disk image. A zip is used only when the release has no
+    /// disk image, so the installed app can replace itself without the CLI.
     static func chooseAsset(
         from assets: [GitHubReleaseAsset],
         architecture: String
     ) -> GitHubReleaseAsset? {
-        let zips = assets.filter { isMacZip($0.name) }
-        let archSuffix = "-macos-\(architecture).zip"
-        if let matched = zips.first(where: { $0.name.lowercased().hasSuffix(archSuffix) }) {
+        chooseMacAsset(from: assets, architecture: architecture, extension: "dmg")
+            ?? chooseMacAsset(from: assets, architecture: architecture, extension: "zip")
+    }
+
+    private static func chooseMacAsset(
+        from assets: [GitHubReleaseAsset],
+        architecture: String,
+        extension fileExtension: String
+    ) -> GitHubReleaseAsset? {
+        let matches = assets.filter { isMacAsset($0.name, extension: fileExtension) }
+        let archSuffix = "-macos-\(architecture).\(fileExtension)"
+        if let matched = matches.first(where: { $0.name.lowercased().hasSuffix(archSuffix) }) {
             return matched
         }
-        if let universal = zips.first(where: { $0.name.lowercased().hasSuffix("-macos.zip") }) {
+        if let universal = matches.first(where: { $0.name.lowercased().hasSuffix("-macos.\(fileExtension)") }) {
             return universal
         }
-        return zips.first { asset in
+        return matches.first { asset in
             let name = asset.name.lowercased()
             if name.contains("arm64") || name.contains("aarch64") { return architecture == "arm64" }
             if name.contains("x86_64") || name.contains("intel") { return architecture == "x86_64" }
@@ -268,9 +277,9 @@ enum AppUpdateChecker {
         )
     }
 
-    private static func isMacZip(_ name: String) -> Bool {
+    private static func isMacAsset(_ name: String, extension fileExtension: String) -> Bool {
         let lower = name.lowercased()
-        return lower.hasSuffix(".zip") && lower.contains("macos") && !lower.contains("win")
+        return lower.hasSuffix(".\(fileExtension)") && lower.contains("macos") && !lower.contains("win")
     }
 
     private static func notes(from body: String) -> String {
@@ -313,8 +322,10 @@ enum AppUpdateInstaller {
         guard AppUpdateChecker.isTrustedDownload(update.downloadURL) else {
             throw UpdateError.message("The update link is not a GitHub release asset.")
         }
+        let fileExtension = update.assetName.split(separator: ".").last.map(String.init) ?? "zip"
+        let suffix = fileExtension.lowercased() == "dmg" ? "dmg" : "zip"
         let destination = FileManager.default.temporaryDirectory
-            .appendingPathComponent("EmLoad-\(UUID().uuidString).zip")
+            .appendingPathComponent("EmLoad-\(UUID().uuidString).\(suffix)")
         let downloader = UpdateDownloader(destination: destination, onProgress: onProgress)
         return try await downloader.download(update.downloadURL)
     }
@@ -340,8 +351,11 @@ enum AppUpdateInstaller {
         return try locateApp(in: extracted, depth: 0)
     }
 
-    private static func locateApp(in downloadedZip: URL, scratch: URL) throws -> URL {
-        try locateApp(zip: downloadedZip, scratch: scratch)
+    private static func locateApp(in downloaded: URL, scratch: URL) throws -> URL {
+        if downloaded.pathExtension.lowercased() == "dmg" {
+            return try app(fromDiskImage: downloaded, scratch: scratch)
+        }
+        return try locateApp(zip: downloaded, scratch: scratch)
     }
 
     private static func locateApp(in root: URL, depth: Int) throws -> URL {
