@@ -37,14 +37,13 @@ gui = ["PySide6>=6.6"]
 dev = ["pytest>=8", "pytest-cov"]
 
 [project.scripts]
-emload = "emload.cli:main"
-emload-gui = "emload.gui.app:main"
+EmLoadEngine = "EmLoadEngine.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["emload*"]
+include = ["EmLoadEngine*"]
 
 [tool.setuptools.package-data]
-emload = ["certs/*.pem", "nugget/assets/*", "nugget/assets/bookrestore/*", "gui/assets/*"]
+EmLoadEngine = ["certs/*.pem", "nugget/assets/*", "nugget/assets/bookrestore/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

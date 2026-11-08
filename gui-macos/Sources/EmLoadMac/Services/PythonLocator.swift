@@ -6,7 +6,7 @@ struct PythonLocation {
     let root: String
 }
 
-/// Finds a Python interpreter that can run `python -m emload rpc`.
+/// Finds a Python interpreter that can run `python -m EmLoadEngine rpc`.
 ///
 /// Resolution order:
 /// 1. `EMLOAD_PYTHON` (full path to an interpreter)
@@ -23,7 +23,7 @@ enum PythonLocator {
         if let explicit = environment["EMLOAD_PYTHON"], fm.isExecutableFile(atPath: explicit) {
             let root = findRoot() ?? bundledEngineRoot()
                 ?? (explicit as NSString).deletingLastPathComponent
-            return PythonLocation(python: explicit, root: root)
+            return PythonLocation(python: explicit, root: importRoot(for: root))
         }
 
         var roots: [String] = []
@@ -37,15 +37,15 @@ enum PythonLocator {
 
         var seen = Set<String>()
         for root in roots where seen.insert(root).inserted {
-            if let python = venvPython(in: root) {
-                return PythonLocation(python: python, root: root)
+            if let python = venvPython(in: "\(root)/EmLoadEngine") ?? venvPython(in: root) {
+                return PythonLocation(python: python, root: importRoot(for: root))
             }
         }
 
         // A bundled engine without a venv can still run if the user installed
         // requirements into their system/Homebrew Python.
         let root = bundledEngineRoot() ?? findRoot() ?? fm.currentDirectoryPath
-        return PythonLocation(python: findPythonOnPath(), root: root)
+        return PythonLocation(python: findPythonOnPath(), root: importRoot(for: root))
     }
 
     // MARK: - Roots
@@ -53,6 +53,11 @@ enum PythonLocator {
     private static func commonRoots() -> [String] {
         let home = NSHomeDirectory()
         return [
+            "\(home)/EmLoadEngine",
+            "\(home)/Developer/EmLoadEngine",
+            "\(home)/Documents/EmLoadEngine",
+            "\(home)/src/EmLoadEngine",
+            "\(home)/Projects/EmLoadEngine",
             "\(home)/EmLoadServer",
             "\(home)/Developer/EmLoadServer",
             "\(home)/Documents/EmLoadServer",
@@ -63,7 +68,7 @@ enum PythonLocator {
     }
 
     /// Walk up from the app bundle and the current directory looking for a
-    /// checkout (`pyproject.toml` next to an `emload/` package).
+    /// checkout (an `EmLoadEngine` or `emload` package).
     private static func findRoot() -> String? {
         var starts: [URL] = []
         if let bundle = Bundle.main.bundleURL as URL? {
@@ -92,6 +97,7 @@ enum PythonLocator {
         var candidates: [String] = []
         if let resources = Bundle.main.resourceURL {
             candidates.append(resources.appendingPathComponent("zsign").path)
+            candidates.append(resources.appendingPathComponent("engine/EmLoadEngine/vendor/zsign").path)
             candidates.append(resources.appendingPathComponent("engine/emload/vendor/zsign").path)
         }
         candidates.append(Bundle.main.bundleURL.appendingPathComponent("Contents/MacOS/zsign").path)
@@ -115,8 +121,34 @@ enum PythonLocator {
 
     private static func isCheckout(_ directory: URL) -> Bool {
         let fm = FileManager.default
-        return fm.fileExists(atPath: directory.appendingPathComponent("pyproject.toml").path)
-            && fm.fileExists(atPath: directory.appendingPathComponent("emload/__init__.py").path)
+        if fm.fileExists(atPath: directory.appendingPathComponent("EmLoadEngine/__init__.py").path) {
+            return true
+        }
+        if fm.fileExists(atPath: directory.appendingPathComponent("emload/__init__.py").path) {
+            return true
+        }
+        // A clone of the engine repo: the package files sit in the repo root,
+        // and the folder itself is named EmLoadEngine.
+        return directory.lastPathComponent == "EmLoadEngine"
+            && fm.fileExists(atPath: directory.appendingPathComponent("__init__.py").path)
+            && fm.fileExists(atPath: directory.appendingPathComponent("cli.py").path)
+    }
+
+    /// Directory `python -m EmLoadEngine` must be started in.
+    ///
+    /// A cloned engine repo is the package itself, so the process has to run
+    /// from its parent. A checkout that already contains an `EmLoadEngine/`
+    /// folder is started in place.
+    private static func importRoot(for checkout: String) -> String {
+        let directory = URL(fileURLWithPath: checkout)
+        let fm = FileManager.default
+        let flat = directory.lastPathComponent == "EmLoadEngine"
+            && fm.fileExists(atPath: directory.appendingPathComponent("__init__.py").path)
+            && !fm.fileExists(atPath: directory.appendingPathComponent("EmLoadEngine/__init__.py").path)
+        if flat {
+            return directory.deletingLastPathComponent().path
+        }
+        return checkout
     }
 
     // MARK: - Interpreter

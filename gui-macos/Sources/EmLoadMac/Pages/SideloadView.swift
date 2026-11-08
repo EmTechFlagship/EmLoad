@@ -19,6 +19,7 @@ struct SideloadView: View {
     @State private var isInspecting = false
     @State private var isSideloading = false
     @State private var progress: Double = 0
+    @State private var progressKnown = false
     @State private var phase = ""
     @State private var activity: [String] = []
     @State private var showImporter = false
@@ -30,22 +31,15 @@ struct SideloadView: View {
         PageScroll {
             PageHeader(
                 title: "Sideload",
-                subtitle: "Sign and install an .ipa with your own Apple ID. Signatures last seven days."
+                subtitle: "Sign an IPA with your Apple ID and install it. Signatures last seven days."
             )
 
-            HStack(alignment: .top, spacing: 18) {
-                VStack(spacing: 14) {
-                    dropZone
-                    if let ipa { ipaCard(ipa) }
-                    optionsCard
-                }
-                .frame(maxWidth: .infinity, alignment: .top)
+            sourceCard
+            installCard
+            optionsCard
 
-                VStack(spacing: 14) {
-                    destinationCard
-                    activityCard
-                }
-                .frame(width: 356)
+            if !activity.isEmpty {
+                activityCard
             }
         }
         .fileImporter(
@@ -84,38 +78,20 @@ struct SideloadView: View {
         UTType(filenameExtension: "ipa") ?? .data
     }
 
-    // MARK: - Drop zone
+    // MARK: - Source
 
-    private var dropZone: some View {
-        GlassPanel {
-            VStack(spacing: 10) {
-                if isInspecting {
-                    ProgressView().controlSize(.small)
-                } else {
-                    Image(systemName: ipa == nil ? "arrow.down.doc" : "checkmark.seal.fill")
-                        .font(.system(size: 32, weight: .light))
-                        .foregroundStyle(ipa == nil ? Color.secondary : Color.green)
-                }
-
-                Text(dropText)
-                    .font(.callout)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
-                    .lineLimit(2)
-
-                Button("Browse…") { showImporter = true }
-                    .emSecondaryButton()
-                    .disabled(isInspecting || isSideloading)
+    private var sourceCard: some View {
+        Group {
+            if let ipa {
+                GlassPanel { ipaIdentity(ipa) }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12, style: .continuous)
+                            .strokeBorder(dropTargeted ? EmTheme.accent : Color.clear, lineWidth: 1.5)
+                    )
+            } else {
+                dropZone
             }
-            .frame(maxWidth: .infinity, minHeight: 118)
         }
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(
-                    dropTargeted ? Color.accentColor : Color.clear,
-                    style: StrokeStyle(lineWidth: 2, dash: [7, 5])
-                )
-        )
         .dropDestination(for: URL.self) { urls, _ in
             guard let url = urls.first(where: { $0.pathExtension.lowercased() == "ipa" }) else {
                 return false
@@ -127,189 +103,338 @@ struct SideloadView: View {
         }
     }
 
-    private var dropText: String {
-        if let ipa {
-            return "IPA: \(ipa.appBundle ?? ipa.fileName)"
+    private var dropZone: some View {
+        VStack(spacing: 14) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(EmTheme.accent.opacity(dropTargeted ? 0.18 : 0.10))
+                if isInspecting {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.down.doc")
+                        .font(.system(size: 22, weight: .medium))
+                        .foregroundStyle(EmTheme.accent)
+                }
+            }
+            .frame(width: 52, height: 52)
+
+            VStack(spacing: 4) {
+                Text(dropTargeted ? "Release to add" : "Drop an IPA")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(EmTheme.label)
+                Text("Or browse for a file on this Mac.")
+                    .font(.system(size: 12))
+                    .foregroundStyle(EmTheme.secondary)
+            }
+
+            Button("Browse…") { showImporter = true }
+                .emSecondaryButton()
+                .disabled(isInspecting || isSideloading)
         }
-        return "Drag & drop an .ipa here, or browse"
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 32)
+        .background(
+            EmTheme.elevated.opacity(dropTargeted ? 1 : 0.45),
+            in: RoundedRectangle(cornerRadius: 12, style: .continuous)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 12, style: .continuous)
+                .strokeBorder(
+                    dropTargeted ? EmTheme.accent : EmTheme.hairline,
+                    style: StrokeStyle(lineWidth: 1, dash: dropTargeted ? [] : [5, 4])
+                )
+        )
     }
 
-    // MARK: - IPA details
+    private func ipaIdentity(_ summary: IpaSummary) -> some View {
+        HStack(alignment: .center, spacing: 14) {
+            AppIconView(dataURI: summary.icon, size: 56)
 
-    private func ipaCard(_ summary: IpaSummary) -> some View {
-        GlassPanel {
-            HStack(alignment: .top, spacing: 14) {
-                AppIconView(dataURI: summary.icon, size: 58)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(summary.displayName ?? summary.bundleId ?? "Unknown app")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(EmTheme.label)
+                    .lineLimit(1)
+                Text(summary.bundleId ?? "No bundle identifier")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(EmTheme.secondary)
+                    .textSelection(.enabled)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(summary.displayName ?? summary.bundleId ?? "Unknown app")
-                        .font(.system(size: 16, weight: .semibold))
-                    Text(summary.bundleId ?? "no bundle identifier")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundStyle(.secondary)
-                        .textSelection(.enabled)
-                    Text("version \(summary.version ?? "?") (\(summary.build ?? "?"))   ·   min iOS \(summary.minimumOS ?? "-")")
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
+                HStack(spacing: 6) {
+                    metaChip("\(summary.version ?? "?") (\(summary.build ?? "?"))")
+                    metaChip("iOS \(summary.minimumOS ?? "—")")
                     if let platform = summary.platform, platform != "ios" {
-                        Text("Platform: \(platform) — this IPA is not an iOS app.")
-                            .font(.caption)
-                            .foregroundStyle(.orange)
+                        StatusPill(text: platform, color: .orange)
                     }
                     if summary.encrypted {
-                        Text("App Store-encrypted (FairPlay): this IPA cannot be sideloaded.")
-                            .font(.caption)
-                            .foregroundStyle(.red)
+                        StatusPill(text: "FairPlay", color: .red)
                     }
-                    if !summary.extensions.isEmpty {
-                        Text("Extensions: \(summary.extensions.joined(separator: ", "))")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                }
+
+                if summary.encrypted {
+                    Text("App Store encryption blocks sideloading this IPA.")
+                        .font(.system(size: 11))
+                        .foregroundStyle(.red.opacity(0.9))
+                } else if !summary.extensions.isEmpty {
+                    Text(summary.extensions.joined(separator: ", "))
+                        .font(.system(size: 11))
+                        .foregroundStyle(EmTheme.tertiary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+            }
+
+            Spacer(minLength: 12)
+
+            HStack(spacing: 8) {
+                Button {
+                    showImporter = true
+                } label: {
+                    Label("Replace", systemImage: "arrow.triangle.2.circlepath")
+                }
+                .emSecondaryButton()
+                .disabled(isInspecting || isSideloading)
+
+                Button {
+                    clearIPA()
+                } label: {
+                    Image(systemName: "xmark")
+                }
+                .emCompactButton()
+                .help("Remove this IPA")
+                .disabled(isSideloading)
+            }
+        }
+    }
+
+    private func metaChip(_ text: String) -> some View {
+        Text(text)
+            .font(.system(size: 11, weight: .medium))
+            .foregroundStyle(EmTheme.secondary)
+            .padding(.horizontal, 7)
+            .padding(.vertical, 3)
+            .background(Color.white.opacity(0.06), in: Capsule())
+    }
+
+    // MARK: - Install
+
+    private var installCard: some View {
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 10) {
+                    Image(systemName: "iphone")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundStyle(EmTheme.accent)
+                        .frame(width: 32, height: 32)
+                        .background(
+                            EmTheme.accent.opacity(0.14),
+                            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        )
+
+                    Picker("Device", selection: $selectedUDID) {
+                        if state.devices.isEmpty {
+                            Text("No device connected").tag(String?.none)
+                        }
+                        ForEach(state.devices) { device in
+                            Text("\(device.displayName) · \(device.shortUDID)")
+                                .tag(Optional(device.udid))
+                        }
+                    }
+                    .labelsHidden()
+                    .pickerStyle(.menu)
+                    .frame(maxWidth: 340, alignment: .leading)
+
+                    Button {
+                        Task { await state.refreshDevices() }
+                    } label: {
+                        Image(systemName: "arrow.clockwise")
+                    }
+                    .emCompactButton()
+                    .help("Refresh devices")
+                    .disabled(isSideloading)
+
+                    Spacer(minLength: 8)
+
+                    resetButton
+
+                    Button {
+                        Task { await runSideload() }
+                    } label: {
+                        Label(isSideloading ? "Installing…" : "Install", systemImage: "arrow.down.app")
+                    }
+                    .emPrimaryButton()
+                    .disabled(!canSideload)
+                }
+
+                if isSideloading || progressKnown {
+                    SideloadProgressBar(percent: progressKnown ? progress : nil)
+                }
+
+                if showsStatusLine {
+                    HStack(spacing: 8) {
+                        if isSideloading || isInspecting {
+                            ProgressView().controlSize(.small)
+                        }
+                        Text(statusLine)
+                            .font(.system(size: 12))
+                            .foregroundStyle(EmTheme.secondary)
                             .lineLimit(2)
                     }
                 }
-
-                Spacer(minLength: 0)
             }
         }
     }
 
-    // MARK: - Options
-
-    private var optionsCard: some View {
-        GlassPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionLabel("Options")
-
-                optionRow("Display name") {
-                    TextField("", text: $displayName)
-                        .textFieldStyle(.roundedBorder)
-                }
-                optionRow("Bundle ID") {
-                    TextField("blank = team-scoped", text: $bundleId)
-                        .textFieldStyle(.roundedBorder)
-                }
-                optionRow("Version") {
-                    TextField("", text: $version)
-                        .textFieldStyle(.roundedBorder)
-                }
-
-                Divider().opacity(0.4)
-
-                Toggle("Remove app extensions (free accounts can't sign them)", isOn: $removeExtensions)
-                    .font(.callout)
-                Toggle("Remove device restrictions (UISupportedDevices)", isOn: $removeUisd)
-                    .font(.callout)
-                Toggle("Enable Files-app sharing", isOn: $fileSharing)
-                    .font(.callout)
-                Toggle("Keep the signed .ipa on disk", isOn: $keepSigned)
-                    .font(.callout)
-                    .onChange(of: keepSigned) { value in
-                        Task { await state.saveSettings(["keep_signed": value]) }
-                    }
-            }
+    private var resetButton: some View {
+        Button("Reset App ID") {
+            showResetConfirm = true
         }
+        .buttonStyle(.plain)
+        .font(.system(size: 12, weight: .medium))
+        .foregroundStyle(EmTheme.secondary)
+        .disabled(selectedUDID == nil || isSideloading)
+        .help("Delete the cached App ID and provisioning profiles. The signing certificate is kept.")
     }
 
-    private func optionRow<Content: View>(
-        _ label: String,
-        @ViewBuilder content: () -> Content
-    ) -> some View {
-        HStack(spacing: 10) {
-            Text(label)
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .frame(width: 104, alignment: .leading)
-            content()
-        }
+    private var showsStatusLine: Bool {
+        isSideloading || isInspecting || !phase.isEmpty
     }
 
-    // MARK: - Destination / actions
-
-    private var destinationCard: some View {
-        GlassPanel {
-            VStack(alignment: .leading, spacing: 10) {
-                SectionLabel("Destination")
-
-                Picker("", selection: $selectedUDID) {
-                    if state.devices.isEmpty {
-                        Text("No device connected").tag(String?.none)
-                    }
-                    ForEach(state.devices) { device in
-                        Text("\(device.displayName) — \(device.shortUDID)")
-                            .tag(Optional(device.udid))
-                    }
-                }
-                .labelsHidden()
-                .pickerStyle(.menu)
-                .frame(maxWidth: .infinity, alignment: .leading)
-
-                Button {
-                    Task { await state.refreshDevices() }
-                } label: {
-                    Label("Refresh devices", systemImage: "arrow.clockwise")
-                }
-                .emCompactButton()
-
-                Divider().opacity(0.4)
-
-                Button {
-                    Task { await runSideload() }
-                } label: {
-                    Label("Sideload to iPhone", systemImage: "arrow.down.app.fill")
-                        .frame(maxWidth: .infinity)
-                }
-                .emPrimaryButton()
-                .disabled(!canSideload)
-
-                Button {
-                    showResetConfirm = true
-                } label: {
-                    Label("Reset App ID & Profiles", systemImage: "arrow.counterclockwise")
-                        .frame(maxWidth: .infinity)
-                }
-                .emSecondaryButton()
-                .disabled(selectedUDID == nil || isSideloading)
-
-                if isSideloading || progress > 0 {
-                    ProgressView(value: progress, total: 100)
-                        .progressViewStyle(.linear)
-                }
-
-                HStack(spacing: 8) {
-                    if isSideloading {
-                        ProgressView().controlSize(.small)
-                    }
-                    Text(phase.isEmpty ? (canSideload ? "Ready" : "Choose an IPA and a device") : phase)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(2)
-                }
-            }
-        }
+    private var statusLine: String {
+        if !phase.isEmpty { return phase }
+        if isInspecting { return "Reading IPA…" }
+        return "Installing…"
     }
 
     private var canSideload: Bool {
         ipa != nil && ipaPath != nil && selectedUDID != nil && !isSideloading && !isInspecting
     }
 
+    // MARK: - Options
+
+    private var optionsCard: some View {
+        GlassPanel {
+            VStack(alignment: .leading, spacing: 16) {
+                SectionLabel("Signing")
+
+                HStack(alignment: .top, spacing: 12) {
+                    labeledField("Display name", text: $displayName, prompt: "From the IPA")
+                    labeledField("Version", text: $version, prompt: "1.0")
+                        .frame(maxWidth: 180)
+                }
+
+                labeledField(
+                    "Bundle ID",
+                    text: $bundleId,
+                    prompt: "Blank uses a team-scoped identifier"
+                )
+
+                Rectangle()
+                    .fill(EmTheme.hairline)
+                    .frame(height: 1)
+
+                LazyVGrid(
+                    columns: [
+                        GridItem(.flexible(), alignment: .leading),
+                        GridItem(.flexible(), alignment: .leading),
+                    ],
+                    alignment: .leading,
+                    spacing: 14
+                ) {
+                    optionToggle(
+                        "Remove extensions",
+                        detail: "Free accounts cannot sign app extensions.",
+                        isOn: $removeExtensions
+                    )
+                    optionToggle(
+                        "Ignore device limits",
+                        detail: "Strip UISupportedDevices before signing.",
+                        isOn: $removeUisd
+                    )
+                    optionToggle(
+                        "Files sharing",
+                        detail: "Show this app’s documents in Files.",
+                        isOn: $fileSharing
+                    )
+                    optionToggle(
+                        "Keep signed IPA",
+                        detail: "Save the signed archive after install.",
+                        isOn: $keepSigned
+                    )
+                    .onChange(of: keepSigned) { value in
+                        Task { await state.saveSettings(["keep_signed": value]) }
+                    }
+                }
+            }
+        }
+    }
+
+    private func labeledField(_ title: String, text: Binding<String>, prompt: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text(title)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(EmTheme.secondary)
+            TextField("", text: text, prompt: Text(prompt).foregroundStyle(EmTheme.tertiary))
+                .textFieldStyle(.plain)
+                .font(.system(size: 13))
+                .foregroundStyle(EmTheme.label)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 8)
+                .background(Color.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(EmTheme.hairline, lineWidth: 1)
+                )
+        }
+    }
+
+    private func optionToggle(_ title: String, detail: String, isOn: Binding<Bool>) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            Toggle("", isOn: isOn)
+                .labelsHidden()
+                .toggleStyle(.switch)
+                .controlSize(.small)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(EmTheme.label)
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(EmTheme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+    }
+
     private var activityCard: some View {
         GlassPanel {
-            VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 10) {
                 HStack {
                     SectionLabel("Activity")
                     Spacer()
-                    if !activity.isEmpty {
-                        Button("Clear") { activity.removeAll() }
-                            .emCompactButton()
-                    }
+                    Button("Clear") { activity.removeAll() }
+                        .emCompactButton()
                 }
-                ActivityLog(lines: activity, height: 210)
+                ActivityLog(lines: activity, height: 160)
             }
         }
     }
 
     // MARK: - Actions
+
+    private func clearIPA() {
+        ipa = nil
+        ipaPath = nil
+        displayName = ""
+        bundleId = ""
+        version = ""
+        progress = 0
+        progressKnown = false
+        phase = ""
+    }
 
     private func loadIPA(_ path: String) async {
         guard !isInspecting else { return }
@@ -346,6 +471,7 @@ struct SideloadView: View {
         guard let ipaPath, let udid = selectedUDID else { return }
         isSideloading = true
         progress = 0
+        progressKnown = false
         phase = "Starting…"
         let appName = displayName.isEmpty ? "app" : displayName
         state.setBusy(true, "Sideloading \(appName)…")
@@ -377,6 +503,7 @@ struct SideloadView: View {
                 onProgress: { update in
                     if let percent = update.percent {
                         progress = min(max(percent, 0), 100)
+                        progressKnown = true
                     }
                     if let step = update.step, !step.isEmpty {
                         phase = "[\(update.phase)] \(step)"
@@ -398,6 +525,7 @@ struct SideloadView: View {
             }
 
             progress = 100
+            progressKnown = true
             let name = JSON.string(result["name"]) ?? appName
             append("Installed \(name) on \(udid).")
             if let regenerations = JSON.int(result["profile_regenerations"]), regenerations > 0 {
@@ -444,5 +572,51 @@ struct SideloadView: View {
         if activity.count > 500 {
             activity.removeFirst(activity.count - 500)
         }
+    }
+}
+
+/// A track that stays visible on the charcoal card. Provisioning and signing
+/// do not report a percent, so the bar slides until the install phase does.
+private struct SideloadProgressBar: View {
+    var percent: Double?
+
+    var body: some View {
+        HStack(spacing: 10) {
+            GeometryReader { geo in
+                let width = geo.size.width
+                ZStack(alignment: .leading) {
+                    Capsule()
+                        .fill(Color.white.opacity(0.10))
+                    if let percent {
+                        Capsule()
+                            .fill(EmTheme.accent)
+                            .frame(width: width * min(max(percent, 0), 100) / 100)
+                            .animation(.easeOut(duration: 0.25), value: percent)
+                    } else {
+                        TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
+                            let chunk = max(36, width * 0.32)
+                            let travel = max(0, width - chunk)
+                            let cycle = context.date.timeIntervalSinceReferenceDate
+                                .truncatingRemainder(dividingBy: 1.4) / 1.4
+                            let ping = cycle < 0.5 ? cycle * 2 : 2 - cycle * 2
+                            Capsule()
+                                .fill(EmTheme.accent)
+                                .frame(width: chunk)
+                                .offset(x: travel * ping)
+                        }
+                    }
+                }
+            }
+            .frame(height: 6)
+            .clipShape(Capsule())
+
+            Text(percent.map { "\(Int($0.rounded()))%" } ?? "")
+                .font(.system(size: 11, weight: .semibold).monospacedDigit())
+                .foregroundStyle(EmTheme.secondary)
+                .frame(width: 36, alignment: .trailing)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Sideload progress")
+        .accessibilityValue(percent.map { "\(Int($0.rounded())) percent" } ?? "In progress")
     }
 }

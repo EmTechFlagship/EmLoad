@@ -57,6 +57,11 @@ def test_bad_checksum_is_rejected():
         asyncio.run(_assert_bad_checksum())
 
 
+def test_noack_replies_use_a_dummy_checksum():
+    """debugserver writes #00 on every packet after QStartNoAckMode."""
+    asyncio.run(_assert_dummy_checksum_after_noack())
+
+
 async def _assert_attach_dialogue() -> None:
     received: list[bytes] = []
 
@@ -126,6 +131,36 @@ async def _assert_bad_checksum() -> None:
         writer.close()
 
     await _run_against(server, 1)
+
+
+def _dummy_packet(command: str) -> bytes:
+    """The no-ack form debugserver actually sends: checksum bytes are ``00``."""
+    return b"$" + command.encode("ascii") + b"#00"
+
+
+async def _assert_dummy_checksum_after_noack() -> None:
+    async def server(reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        assert await _read_command(reader) == b"QStartNoAckMode"
+        writer.write(b"+" + gdb_packet("OK"))
+        await writer.drain()
+        assert await reader.readexactly(1) == b"+"
+
+        assert await _read_command(reader) == b"QSetDetachOnError:1"
+        writer.write(_dummy_packet("OK"))
+        await writer.drain()
+
+        assert await _read_command(reader) == b"vAttach;1a"
+        writer.write(_dummy_packet("O6869"))
+        await writer.drain()
+        writer.write(_dummy_packet("T05thread:1;"))
+        await writer.drain()
+
+        assert await _read_command(reader) == b"D"
+        writer.write(_dummy_packet("OK"))
+        await writer.drain()
+        writer.close()
+
+    await _run_against(server, 0x1A)
 
 
 class _MemoryWriter:

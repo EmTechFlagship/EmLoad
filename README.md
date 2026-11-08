@@ -275,7 +275,7 @@ The desktop app has a sidebar with seven pages:
 ### macOS app (SwiftUI)
 
 `gui-macos/` is a native SwiftUI shell that drives the same Python engine over
-the newline-delimited JSON-RPC bridge (`emload rpc`). It is not a second
+the newline-delimited JSON-RPC bridge (`EmLoadEngine rpc`). It is not a second
 implementation: sideloading, provisioning, signing, refresh and the Misc tweak
 schema all stay in Python.
 
@@ -287,13 +287,16 @@ The build compiles `zsign` from source
 (upstream does not publish an Intel macOS binary) and bundles it in the app.
 
 ```bash
-# 1. Install the Python engine and its dependencies (once)
+# 1. Clone the engine and install it from that directory
+git clone https://github.com/EmTechFlagship/EmLoadEngine.git
+cd EmLoadEngine
 python3 -m venv .venv
 .venv/bin/python -m pip install -e .
-.venv/bin/python -m emload setup      # downloads zsign for macOS
-.venv/bin/python -m emload doctor
+.venv/bin/python -m EmLoadEngine setup      # downloads zsign for macOS
+.venv/bin/python -m EmLoadEngine doctor
 
-# 2. Build EmLoad.app
+# 2. Build EmLoad.app from the EmLoad checkout
+cd ..
 ./gui-macos/scripts/build-app.sh      # -> gui-macos/dist/EmLoad.app
 open gui-macos/dist/EmLoad.app
 ```

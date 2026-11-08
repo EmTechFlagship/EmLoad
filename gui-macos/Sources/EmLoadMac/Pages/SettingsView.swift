@@ -31,7 +31,7 @@ struct SettingsView: View {
         PageScroll {
             PageHeader(
                 title: "Settings",
-                subtitle: "Preferences are stored in EmLoad's macOS Application Support folder and shared with the CLI."
+                subtitle: "Connection, signing, and where files are kept."
             )
 
             connectionCard
@@ -50,116 +50,143 @@ struct SettingsView: View {
     // MARK: - Connection / signing
 
     private var connectionCard: some View {
-        GlassPanel {
-            VStack(alignment: .leading, spacing: 14) {
-                SectionLabel("Connection")
-
-                HStack(spacing: 12) {
-                    Text("Device transport")
-                        .foregroundStyle(.secondary)
-                        .frame(width: 150, alignment: .leading)
-                    Picker("", selection: connectionBinding) {
+        GlassPanel(padding: 0) {
+            VStack(spacing: 0) {
+                HStack(spacing: 16) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Connection")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(EmTheme.label)
+                        Text("Automatic uses USB, then Wi-Fi.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(EmTheme.tertiary)
+                    }
+                    Spacer(minLength: 12)
+                    Picker("Connection", selection: connectionBinding) {
                         Text("Automatic").tag("auto")
-                        Text("USB only").tag("usb")
-                        Text("Wi-Fi only").tag("wifi")
+                        Text("USB").tag("usb")
+                        Text("Wi-Fi").tag("wifi")
                     }
                     .labelsHidden()
                     .pickerStyle(.segmented)
-                    .frame(width: 330)
+                    .frame(width: 240)
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
 
-                Text("Automatic prefers USB and falls back to Wi-Fi for devices already paired on this Mac.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                Divider().opacity(0.35)
 
-                Divider().opacity(0.4)
+                VStack(alignment: .leading, spacing: 10) {
+                    Toggle("Keep signed IPAs", isOn: keepSignedBinding)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundStyle(EmTheme.label)
 
-                Toggle("Keep signed .ipa files on disk", isOn: keepSignedBinding)
-                    .font(.callout)
-
-                HStack(spacing: 8) {
-                    TextField("Signed folder (blank = EmLoad data folder)", text: $signedDir)
-                        .textFieldStyle(.roundedBorder)
-                        .onSubmit {
-                            Task { await save(["signed_dir": signedDir]) }
-                        }
-                    Button("Choose…") { chooseSignedFolder() }
-                        .emSecondaryButton()
-                    Button("Open") { openFolder(signedDir.isEmpty ? dataDir : signedDir) }
-                        .emSecondaryButton()
-                        .disabled(signedDir.isEmpty && dataDir.isEmpty)
+                    HStack(spacing: 8) {
+                        TextField("Data folder", text: $signedDir)
+                            .textFieldStyle(.plain)
+                            .font(.system(size: 12, design: .monospaced))
+                            .foregroundStyle(EmTheme.label)
+                            .onSubmit {
+                                Task { await save(["signed_dir": signedDir]) }
+                            }
+                        Button("Choose…") { chooseSignedFolder() }
+                            .emCompactButton()
+                        Button("Open") { openFolder(signedDir.isEmpty ? dataDir : signedDir) }
+                            .emCompactButton()
+                            .disabled(signedDir.isEmpty && dataDir.isEmpty)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 7)
+                    .background(Color.black.opacity(0.22), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .strokeBorder(EmTheme.hairline, lineWidth: 1)
+                    )
                 }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
             }
         }
     }
 
     private var signingCard: some View {
         GlassPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionLabel("Signing")
+            HStack(spacing: 12) {
+                Image(systemName: zsign?.available == true ? "checkmark.seal.fill" : "signature")
+                    .font(.system(size: 16, weight: .medium))
+                    .foregroundStyle(zsign?.available == true ? Color.green : EmTheme.tertiary)
+                    .frame(width: 22)
 
-                HStack(spacing: 12) {
-                    Image(systemName: zsign?.available == true ? "checkmark.seal.fill" : "signature")
-                        .font(.system(size: 22))
-                        .foregroundStyle(zsign?.available == true ? .green : .secondary)
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(zsign?.available == true ? "zsign is installed" : "zsign not found")
-                            .font(.callout.weight(.semibold))
-                        if let zsign, zsign.available {
-                            Text(zsign.path ?? "")
-                                .font(.system(size: 11, design: .monospaced))
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                            if let version = zsign.version {
-                                Text(version)
-                                    .font(.caption)
-                                    .foregroundStyle(.secondary)
-                            }
-                        } else {
-                            Text(zsign?.error ?? (zsignMessage.isEmpty
-                                 ? "Download zsign here or set EMLOAD_ZSIGN to a compatible binary."
-                                 : zsignMessage))
-                                .font(.callout)
-                                .foregroundStyle(.secondary)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                    Spacer()
-                    if downloadingZsign { ProgressView().controlSize(.small) }
-                    Button(zsign?.available == true ? "Recheck" : "Download zsign") {
-                        Task { await zsignAction() }
-                    }
-                    .emSecondaryButton()
-                    .disabled(downloadingZsign)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(zsign?.available == true ? "zsign" : "zsign not found")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(EmTheme.label)
+                    Text(zsignDetail)
+                        .font(.system(size: 11, design: zsign?.available == true ? .monospaced : .default))
+                        .foregroundStyle(EmTheme.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
                 }
 
-                Text("The macOS app includes a zsign built for this Mac (Apple silicon or Intel). Download uses the official release when one exists, and otherwise compiles zsign from source.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+
+                if downloadingZsign { ProgressView().controlSize(.small) }
+                Button(zsign?.available == true ? "Recheck" : "Download") {
+                    Task { await zsignAction() }
+                }
+                .emSecondaryButton()
+                .disabled(downloadingZsign)
+                .help("Uses the zsign built for this Mac. Download takes the official release when one exists, and otherwise compiles zsign from source.")
             }
         }
     }
 
-    private var emContainerCard: some View {
-        GlassPanel {
-            VStack(alignment: .leading, spacing: 12) {
-                SectionLabel("EmContainer")
+    private var zsignDetail: String {
+        if let zsign, zsign.available {
+            let path = zsign.path ?? ""
+            if let version = zsign.version, !version.isEmpty {
+                return path.isEmpty ? version : "\(version)  ·  \(path)"
+            }
+            return path
+        }
+        if let error = zsign?.error, !error.isEmpty { return error }
+        if !zsignMessage.isEmpty { return zsignMessage }
+        return "Download zsign, or set EMLOAD_ZSIGN to a compatible binary."
+    }
 
-                Text("Share this Mac's signing certificate with EmContainer. The iPhone and this Mac need to be on the same network. Paste each value into EmContainer's EmLoad Certificate screen; the button copies the next field.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+    private var emContainerCard: some View {
+        GlassPanel(padding: certificateShare?.running == true ? 14 : 16) {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("EmContainer")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(EmTheme.label)
+                        Text("Share this Mac's certificate on the same network.")
+                            .font(.system(size: 12))
+                            .foregroundStyle(EmTheme.tertiary)
+                    }
+                    Spacer(minLength: 12)
+                    if certificateShare?.running != true {
+                        if sharingCertificate { ProgressView().controlSize(.small) }
+                        Button("Share certificate") {
+                            Task { await startCertificateShare() }
+                        }
+                        .emPrimaryButton()
+                        .disabled(sharingCertificate)
+                    }
+                }
 
                 if let certificateShare, certificateShare.running {
-                    certificateField("EmLoad HTTPS URL", certificateShare.url, step: 0)
-                    certificateField("EmLoad transfer token", certificateShare.token, step: 1)
-                    certificateField("TLS certificate SHA-256 fingerprint", certificateShare.fingerprint, step: 2)
+                    certificateField("HTTPS URL", certificateShare.url, step: 0)
+                    certificateField("Transfer token", certificateShare.token, step: 1)
+                    certificateField("SHA-256 fingerprint", certificateShare.fingerprint, step: 2)
 
                     if !certificateMessage.isEmpty {
                         Text(certificateMessage)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 12))
+                            .foregroundStyle(EmTheme.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                     }
 
@@ -170,27 +197,18 @@ struct SettingsView: View {
                         .emPrimaryButton()
                         .disabled(certificateCopyStep >= 3)
 
-                        Button("Stop sharing") {
+                        Button("Stop") {
                             Task { await stopCertificateShare() }
                         }
                         .emSecondaryButton()
                         .disabled(sharingCertificate)
+                        Spacer(minLength: 0)
                     }
-                } else {
-                    if !certificateMessage.isEmpty {
-                        Text(certificateMessage)
-                            .font(.callout)
-                            .foregroundStyle(.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    HStack(spacing: 8) {
-                        if sharingCertificate { ProgressView().controlSize(.small) }
-                        Button("Import EmLoad certificate") {
-                            Task { await startCertificateShare() }
-                        }
-                        .emPrimaryButton()
-                        .disabled(sharingCertificate)
-                    }
+                } else if !certificateMessage.isEmpty {
+                    Text(certificateMessage)
+                        .font(.system(size: 12))
+                        .foregroundStyle(EmTheme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
         }
@@ -206,19 +224,25 @@ struct SettingsView: View {
     }
 
     private func certificateField(_ title: String, _ value: String, step: Int) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(title)
-                .font(.caption.weight(.semibold))
-                .foregroundStyle(certificateCopyStep == step ? Color.accentColor : .secondary)
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(certificateCopyStep == step ? EmTheme.accent : EmTheme.tertiary)
                 Text(value)
                     .font(.system(size: 11, design: .monospaced))
+                    .foregroundStyle(EmTheme.label)
                     .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Button("Copy") { copyCertificateValue(value, advanceTo: step + 1) }
-                    .emSecondaryButton()
+                    .lineLimit(1)
+                    .truncationMode(.middle)
             }
+            Spacer(minLength: 8)
+            Button("Copy") { copyCertificateValue(value, advanceTo: step + 1) }
+                .emCompactButton()
         }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(Color.black.opacity(0.18), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
     }
 
     // MARK: - EmSideStore
@@ -283,20 +307,30 @@ struct SettingsView: View {
 
     private var dataCard: some View {
         GlassPanel {
-            VStack(alignment: .leading, spacing: 10) {
-                SectionLabel("Data")
-                InfoRow(label: "Application Support", value: dataDir, mono: true)
-                InfoRow(label: "config.json", value: configFile, mono: true)
-                HStack {
-                    Button {
-                        openFolder(dataDir)
-                    } label: {
-                        Label("Open data folder", systemImage: "folder")
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Data folder")
+                        .font(.system(size: 13, weight: .semibold))
+                        .foregroundStyle(EmTheme.label)
+                    Text(dataDir.isEmpty ? "Not available yet" : dataDir)
+                        .font(.system(size: 11, design: .monospaced))
+                        .foregroundStyle(EmTheme.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                    if !configFile.isEmpty {
+                        Text(configFile)
+                            .font(.system(size: 11, design: .monospaced))
+                            .foregroundStyle(EmTheme.tertiary)
+                            .lineLimit(1)
+                            .truncationMode(.middle)
+                            .textSelection(.enabled)
                     }
+                }
+                Spacer(minLength: 8)
+                Button("Open") { openFolder(dataDir) }
                     .emSecondaryButton()
                     .disabled(dataDir.isEmpty)
-                    Spacer()
-                }
             }
         }
     }

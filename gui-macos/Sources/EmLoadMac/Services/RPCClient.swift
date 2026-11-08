@@ -58,7 +58,7 @@ final class RPCClient {
         let location = PythonLocator.locate()
         let process = Process()
         process.executableURL = URL(fileURLWithPath: location.python)
-        process.arguments = ["-m", "emload", "rpc"]
+        process.arguments = ["-m", "EmLoadEngine", "rpc"]
         process.currentDirectoryURL = URL(fileURLWithPath: location.root)
 
         var environment = ProcessInfo.processInfo.environment
@@ -98,7 +98,7 @@ final class RPCClient {
             throw EngineFailure(
                 message: "The EmLoad engine did not start within 90 seconds.\n\n"
                     + "Python: \(location.python)\nRepo: \(location.root)\n\n"
-                    + "Run `\(location.python) -m emload doctor` in Terminal to see why.",
+                    + "Run `\(location.python) -m EmLoadEngine doctor` in Terminal to see why.",
                 kind: "StartTimeout"
             )
         }

@@ -1,1 +1,0 @@
-"""EmLoad desktop app (PySide6)."""
